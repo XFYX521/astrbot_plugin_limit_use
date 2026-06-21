@@ -82,6 +82,24 @@ astrbot_plugin_limit_use/
 - AstrBot >= v4.9.2（使用 KV 存储功能）
 - 消息平台：QQ（aiocqhttp）
 
+## 更新日志
+
+### v1.0.1
+
+- 🐛 修复 `get_kv_data()` 缺少 `default` 参数导致的异常
+- 🔧 移除 Web API / Pages 功能，兼容旧版 AstrBot
+- 📝 完善 README 文档
+
+### v1.0.0
+
+- 🎉 初始版本
+- 用户对话次数额度管理，每次对话 -1
+- 次数用尽自动回复并阻止继续对话
+- `/签到` 每日获取次数
+- `/我的余额` 查询剩余次数
+- `/帮助` 显示指令列表
+- 管理员白名单免次数限制
+
 ## License
 
 [MIT](LICENSE)

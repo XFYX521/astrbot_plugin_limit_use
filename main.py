@@ -10,7 +10,7 @@ PLUGIN_NAME = "astrbot_plugin_limit_use"
     PLUGIN_NAME,
     "XFYX521",
     "给QQ用户设置对话次数额度，用完需签到补充。",
-    "1.0.0",
+    "1.0.1",
 )
 class LimitUsePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
