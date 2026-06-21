@@ -24,20 +24,20 @@ class LimitUsePlugin(Star):
     # ══════════════════════════════════════════════
 
     async def _get_quota(self) -> dict:
-        return await self.get_kv_data("user_quota") or {}
+        return await self.get_kv_data("user_quota", {}) or {}
 
     async def _save_quota(self, data: dict):
         await self.put_kv_data("user_quota", data)
 
     async def _get_signin(self) -> dict:
-        return await self.get_kv_data("user_signin") or {}
+        return await self.get_kv_data("user_signin", {}) or {}
 
     async def _save_signin(self, data: dict):
         await self.put_kv_data("user_signin", data)
 
     async def _get_total_usage(self) -> dict:
         """获取累积调用次数 {uid: total_used}"""
-        return await self.get_kv_data("user_total_usage") or {}
+        return await self.get_kv_data("user_total_usage", {}) or {}
 
     async def _save_total_usage(self, data: dict):
         await self.put_kv_data("user_total_usage", data)
