@@ -10,7 +10,7 @@ PLUGIN_NAME = "astrbot_plugin_limit_use"
     PLUGIN_NAME,
     "XFYX521",
     "给QQ用户设置对话次数额度，用完需签到补充。",
-    "1.0.1",
+    "1.0.2",
 )
 class LimitUsePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -42,20 +42,14 @@ class LimitUsePlugin(Star):
     async def _save_total_usage(self, data: dict):
         await self.put_kv_data("user_total_usage", data)
 
-    def _is_command(self, text: str) -> bool:
-        return text.strip().startswith("/")
-
     # ══════════════════════════════════════════════
-    #  事件监听 —— 拦截所有消息，扣减次数
+    #  LLM 请求钩子 —— 每次调 LLM 前扣减次数
     # ══════════════════════════════════════════════
 
-    @filter.event_message_type(filter.EventMessageType.ALL)
-    async def on_message(self, event: AstrMessageEvent):
+    @filter.on_llm_request()
+    async def on_llm_req(self, event: AstrMessageEvent, req: "ProviderRequest"):
+        """在 LLM 请求前检查并扣减对话次数（指令不会触发 LLM，故不计入）"""
         user_id = event.get_sender_id()
-        text = event.message_str.strip()
-
-        if not text or self._is_command(text):
-            return
 
         # 管理员免限
         admin_list = self.config.get("admin_users", [])
@@ -68,7 +62,7 @@ class LimitUsePlugin(Star):
 
         if remain <= 0:
             reply = self.config["limit_reply"]
-            yield event.plain_result(reply)
+            await event.send(event.plain_result(reply))
             event.stop_event()
             return
 

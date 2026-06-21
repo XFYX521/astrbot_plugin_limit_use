@@ -84,6 +84,11 @@ astrbot_plugin_limit_use/
 
 ## 更新日志
 
+### v1.0.2
+
+- 🐛 修复指令也被计入次数的问题（改用 `on_llm_request` 钩子）
+- 🔧 只有真正调用 LLM 的对话才消耗次数
+
 ### v1.0.1
 
 - 🐛 修复 `get_kv_data()` 缺少 `default` 参数导致的异常
