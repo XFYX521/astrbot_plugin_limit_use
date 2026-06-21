@@ -1,0 +1,38 @@
+{
+  "default_quota": {
+    "description": "每个用户的默认初始对话次数",
+    "type": "int",
+    "default": 5,
+    "hint": "新用户第一次对话时会获得这个次数的额度"
+  },
+  "daily_bonus": {
+    "description": "每日签到增加的对话次数",
+    "type": "int",
+    "default": 5,
+    "hint": "用户每天签到一次能获得的额外次数"
+  },
+  "limit_reply": {
+    "description": "次数用完后自动回复的内容",
+    "type": "text",
+    "default": "呜呜，你的对话次数已经用完啦(´;ω;`)\n发送 /签到 可以获取更多次数哦～",
+    "hint": "当用户次数为0时，机器人会回复这段文字"
+  },
+  "signin_reply": {
+    "description": "签到成功后的回复内容",
+    "type": "text",
+    "default": "签到成功！获得 {bonus} 次对话次数～今天也要开心哦 ✨",
+    "hint": "可用 {bonus} 占位符，会自动替换为本次获得的次数"
+  },
+  "quota_query_reply": {
+    "description": "查询剩余次数的回复模板",
+    "type": "text",
+    "default": "你还有 {quota} 次对话次数哦～要省着点用呢(｡•ᴗ•｡)",
+    "hint": "可用 {quota} 占位符，会自动替换为剩余次数"
+  },
+  "admin_users": {
+    "description": "免次数限制的管理员QQ号列表",
+    "type": "list",
+    "default": [],
+    "hint": "填入管理员QQ号，这些用户不受次数限制。如 [\"123456\", \"789012\"]"
+  }
+}
