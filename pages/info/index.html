@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <title>对话次数限制</title>
+  <title>用户次数管理</title>
   <style>
     :root {
       --bg: #f5f5f5;
@@ -10,6 +10,10 @@
       --border: #e0e0e0;
       --text: #1a1a1a;
       --text-secondary: #666;
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --danger: #ef4444;
+      --success: #22c55e;
     }
     [data-theme="dark"] {
       --bg: #1a1a2e;
@@ -17,47 +21,187 @@
       --border: #2a2a4a;
       --text: #e0e0e0;
       --text-secondary: #a0a0b0;
+      --primary: #818cf8;
+      --primary-hover: #6366f1;
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       background: var(--bg);
       color: var(--text);
-      padding: 24px;
+      padding: 20px;
     }
-    h1 { font-size: 20px; margin-bottom: 16px; }
-    .info { 
+    h1 { font-size: 20px; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+
+    .stats-bar {
+      display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+    }
+    .stat-card {
       background: var(--card);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 16px 20px;
-      line-height: 1.8;
-      font-size: 14px;
+      padding: 12px 18px;
+      flex: 1; min-width: 120px;
     }
-    .info strong { color: var(--text); }
-    .tag {
-      display: inline-block;
-      padding: 2px 10px;
-      border-radius: 999px;
-      font-size: 12px;
-      background: #6366f1;
-      color: #fff;
-      margin: 4px 4px 0 0;
+    .stat-card .label { font-size: 12px; color: var(--text-secondary); }
+    .stat-card .value { font-size: 22px; font-weight: 700; margin-top: 2px; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--card);
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border);
     }
+    th, td {
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      background: var(--border);
+      font-size: 13px;
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
+    td { font-size: 14px; vertical-align: middle; }
+    tr:last-child td { border-bottom: none; }
+
+    .num { font-weight: 600; font-size: 16px; min-width: 40px; display: inline-block; text-align: center; }
+
+    .btn {
+      border: none; border-radius: 6px;
+      cursor: pointer; font-size: 13px; font-weight: 600;
+      padding: 5px 12px; min-width: 42px;
+      transition: background 0.15s;
+    }
+    .btn-edit { background: var(--border); color: var(--text); }
+    .btn-edit:hover { background: #ccc; }
+
+    .btn-group { display: flex; gap: 6px; align-items: center; }
+    .btn-plus10  { background: #22c55e; color: #fff; }
+    .btn-plus10:hover { background: #16a34a; }
+    .btn-plus1   { background: #86efac; color: #166534; }
+    .btn-plus1:hover { background: #4ade80; }
+    .btn-minus1  { background: #fca5a5; color: #991b1b; }
+    .btn-minus1:hover { background: #f87171; }
+    .btn-minus10 { background: #ef4444; color: #fff; }
+    .btn-minus10:hover { background: #dc2626; }
+
+    .empty-state, .loading {
+      text-align: center; padding: 40px 20px;
+      color: var(--text-secondary);
+    }
+
+    .toast {
+      position: fixed; top: 16px; right: 16px;
+      padding: 10px 18px; border-radius: 8px;
+      font-size: 14px; z-index: 999;
+      opacity: 0; transition: opacity 0.25s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+    .toast-success { background: #22c55e; color: #fff; }
+    .toast-error { background: #ef4444; color: #fff; }
   </style>
 </head>
 <body>
-  <h1>📊 对话次数限制</h1>
-  <div class="info">
-    <p><strong>版本：</strong>v1.0.2</p>
-    <p><strong>说明：</strong>给 QQ 用户设置对话次数额度，用完需签到补充。</p>
-    <p style="margin-top:12px;"><strong>可用指令：</strong></p>
-    <p>├ <code>/帮助</code> — 显示帮助菜单</p>
-    <p>├ <code>/签到</code> — 每日获取对话次数</p>
-    <p>└ <code>/我的余额</code> — 查看剩余次数</p>
-    <p style="margin-top:12px;"><strong>配置提示：</strong></p>
-    <p>次数相关配置请在 WebUI 插件配置面板中修改。</p>
-    <p>管理员 QQ 号填入 <code>admin_users</code> 列表即可免次数限制。</p>
-  </div>
+
+  <h1>📊 用户次数管理</h1>
+
+  <div class="stats-bar" id="statsBar"></div>
+  <div id="tableWrap"><div class="loading">加载中...</div></div>
+  <div id="toast" class="toast"></div>
+
+  <script type="module">
+    const bridge = window.AstrBotPluginPage;
+    await bridge.ready();
+
+    const statsBar = document.getElementById('statsBar');
+    const tableWrap = document.getElementById('tableWrap');
+    const toastEl = document.getElementById('toast');
+
+    function toast(msg, type = 'success') {
+      toastEl.textContent = msg;
+      toastEl.className = `toast toast-${type} show`;
+      setTimeout(() => toastEl.classList.remove('show'), 2000);
+    }
+
+    async function loadData() {
+      tableWrap.innerHTML = '<div class="loading">加载中...</div>';
+      try {
+        const res = await bridge.apiGet('users');
+        render(res.users || []);
+      } catch (e) {
+        tableWrap.innerHTML = `<div class="loading" style="color:#ef4444;">加载失败: ${e.message}</div>`;
+      }
+    }
+
+    function render(users) {
+      const total = users.length;
+      const usedSum = users.reduce((s, u) => s + u.total_used, 0);
+      const remainSum = users.reduce((s, u) => s + u.remaining, 0);
+      statsBar.innerHTML = `
+        <div class="stat-card"><div class="label">用户总数</div><div class="value">${total}</div></div>
+        <div class="stat-card"><div class="label">累积调用</div><div class="value">${usedSum}</div></div>
+        <div class="stat-card"><div class="label">剩余总次数</div><div class="value">${remainSum}</div></div>
+      `;
+
+      if (!users.length) {
+        tableWrap.innerHTML = '<div class="empty-state">暂无用户数据</div>';
+        return;
+      }
+
+      let html = `<table>
+        <thead><tr>
+          <th>QQ号</th>
+          <th>已调用</th>
+          <th>剩余次数</th>
+          <th>操作</th>
+        </tr></thead><tbody>`;
+
+      for (const u of users) {
+        html += `<tr data-uid="${u.user_id}">
+          <td><strong>${u.user_id}</strong></td>
+          <td><span class="num">${u.total_used}</span></td>
+          <td><span class="num td-remain" id="r-${u.user_id}">${u.remaining}</span></td>
+          <td>
+            <div class="btn-group">
+              <button class="btn btn-plus10"  data-uid="${u.user_id}" data-delta="10">+10</button>
+              <button class="btn btn-plus1"   data-uid="${u.user_id}" data-delta="1">+1</button>
+              <button class="btn btn-minus1"  data-uid="${u.user_id}" data-delta="-1">-1</button>
+              <button class="btn btn-minus10" data-uid="${u.user_id}" data-delta="-10">-10</button>
+            </div>
+          </td>
+        </tr>`;
+      }
+
+      html += '</tbody></table>';
+      tableWrap.innerHTML = html;
+
+      // 绑定按钮
+      tableWrap.querySelectorAll('[data-delta]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const uid = btn.dataset.uid;
+          const delta = parseInt(btn.dataset.delta, 10);
+          const remainEl = document.getElementById(`r-${uid}`);
+          const cur = parseInt(remainEl.textContent, 10);
+          const newVal = Math.max(0, cur + delta);
+          if (newVal === cur) return;
+          try {
+            const res = await bridge.apiGet(`update/${uid}/${newVal}`);
+            remainEl.textContent = res.remaining;
+            // 刷新统计
+            loadData();
+          } catch (e) {
+            toast(`操作失败: ${e.message}`, 'error');
+          }
+        });
+      });
+    }
+
+    loadData();
+  </script>
 </body>
 </html>

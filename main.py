@@ -10,14 +10,30 @@ PLUGIN_NAME = "astrbot_plugin_limit_use"
     PLUGIN_NAME,
     "XFYX521",
     "给QQ用户设置对话次数额度，用完需签到补充。",
-    "1.0.2",
+    "1.0.3",
 )
 class LimitUsePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.config = config
 
-        logger.info("LimitUsePlugin 已加载")
+        # ── Web API（供 WebUI 管理页面使用） ──
+        try:
+            context.register_web_api(
+                f"/{PLUGIN_NAME}/users",
+                self.api_get_users,
+                ["GET"],
+                "获取所有用户的次数数据",
+            )
+            context.register_web_api(
+                f"/{PLUGIN_NAME}/update/<user_id>/<int:remaining>",
+                self.api_update_user,
+                ["GET"],
+                "修改指定用户的剩余次数",
+            )
+            logger.info("LimitUsePlugin: Web API 已注册")
+        except Exception as e:
+            logger.warning(f"LimitUsePlugin: Web API 注册失败 ({e})，跳过")
 
     # ══════════════════════════════════════════════
     #  KV 工具方法
@@ -36,7 +52,6 @@ class LimitUsePlugin(Star):
         await self.put_kv_data("user_signin", data)
 
     async def _get_total_usage(self) -> dict:
-        """获取累积调用次数 {uid: total_used}"""
         return await self.get_kv_data("user_total_usage", {}) or {}
 
     async def _save_total_usage(self, data: dict):
@@ -48,15 +63,12 @@ class LimitUsePlugin(Star):
 
     @filter.on_llm_request()
     async def on_llm_req(self, event: AstrMessageEvent, req: "ProviderRequest"):
-        """在 LLM 请求前检查并扣减对话次数（指令不会触发 LLM，故不计入）"""
         user_id = event.get_sender_id()
 
-        # 管理员免限
         admin_list = self.config.get("admin_users", [])
         if user_id in admin_list:
             return
 
-        # 检查剩余次数
         quota = await self._get_quota()
         remain = quota.get(user_id, self.config["default_quota"])
 
@@ -66,17 +78,15 @@ class LimitUsePlugin(Star):
             event.stop_event()
             return
 
-        # 扣次数
         quota[user_id] = remain - 1
         await self._save_quota(quota)
 
-        # 记录累积调用
         usage = await self._get_total_usage()
         usage[user_id] = usage.get(user_id, 0) + 1
         await self._save_total_usage(usage)
 
     # ══════════════════════════════════════════════
-    #  指令：/签到
+    #  指令
     # ══════════════════════════════════════════════
 
     @filter.command("签到")
@@ -101,10 +111,6 @@ class LimitUsePlugin(Star):
         reply = self.config["signin_reply"].replace("{bonus}", str(bonus))
         yield event.plain_result(reply)
 
-    # ══════════════════════════════════════════════
-    #  指令：/我的余额
-    # ══════════════════════════════════════════════
-
     @filter.command("我的余额")
     async def query_quota(self, event: AstrMessageEvent):
         user_id = event.get_sender_id()
@@ -112,10 +118,6 @@ class LimitUsePlugin(Star):
         remain = quota.get(user_id, self.config["default_quota"])
         reply = self.config["quota_query_reply"].replace("{quota}", str(remain))
         yield event.plain_result(reply)
-
-    # ══════════════════════════════════════════════
-    #  指令：/帮助
-    # ══════════════════════════════════════════════
 
     @filter.command("帮助")
     async def help_cmd(self, event: AstrMessageEvent):
@@ -126,6 +128,44 @@ class LimitUsePlugin(Star):
             "└ /我的余额 — 查看剩余对话次数"
         )
         yield event.plain_result(msg)
+
+    # ══════════════════════════════════════════════
+    #  Web API —— 返回 dict 即可（自动转 JSON）
+    # ══════════════════════════════════════════════
+
+    async def api_get_users(self):
+        """返回所有用户的次数数据"""
+        quota = await self._get_quota()
+        usage = await self._get_total_usage()
+        signin = await self._get_signin()
+
+        all_uids = set(quota.keys()) | set(usage.keys()) | set(signin.keys())
+        if not all_uids:
+            return {"users": []}
+
+        users = []
+        for uid in sorted(all_uids):
+            users.append({
+                "user_id": uid,
+                "remaining": quota.get(uid, self.config["default_quota"]),
+                "total_used": usage.get(uid, 0),
+                "last_signin": signin.get(uid, ""),
+            })
+        return {"users": users}
+
+    async def api_update_user(self, user_id: str, remaining: int):
+        """修改指定用户的剩余次数"""
+        quota = await self._get_quota()
+        quota[user_id] = max(0, remaining)
+        await self._save_quota(quota)
+
+        usage = await self._get_total_usage()
+        return {
+            "ok": True,
+            "user_id": user_id,
+            "remaining": quota[user_id],
+            "total_used": usage.get(user_id, 0),
+        }
 
     # ══════════════════════════════════════════════
     #  插件销毁
