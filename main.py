@@ -10,7 +10,7 @@ PLUGIN_NAME = "astrbot_plugin_limit_use"
     PLUGIN_NAME,
     "XFYX521",
     "给QQ用户设置对话次数额度，用完需签到补充。",
-    "1.0.3",
+    "1.0.4",
 )
 class LimitUsePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -30,6 +30,12 @@ class LimitUsePlugin(Star):
                 self.api_update_user,
                 ["GET"],
                 "修改指定用户的剩余次数",
+            )
+            context.register_web_api(
+                f"/{PLUGIN_NAME}/remark/<user_id>/<remark>",
+                self.api_set_remark,
+                ["GET"],
+                "设置用户备注",
             )
             logger.info("LimitUsePlugin: Web API 已注册")
         except Exception as e:
@@ -56,6 +62,13 @@ class LimitUsePlugin(Star):
 
     async def _save_total_usage(self, data: dict):
         await self.put_kv_data("user_total_usage", data)
+
+    async def _get_remarks(self) -> dict:
+        """获取用户备注 {uid: remark}"""
+        return await self.get_kv_data("user_remarks", {}) or {}
+
+    async def _save_remarks(self, data: dict):
+        await self.put_kv_data("user_remarks", data)
 
     # ══════════════════════════════════════════════
     #  LLM 请求钩子 —— 每次调 LLM 前扣减次数
@@ -138,8 +151,9 @@ class LimitUsePlugin(Star):
         quota = await self._get_quota()
         usage = await self._get_total_usage()
         signin = await self._get_signin()
+        remarks = await self._get_remarks()
 
-        all_uids = set(quota.keys()) | set(usage.keys()) | set(signin.keys())
+        all_uids = set(quota.keys()) | set(usage.keys()) | set(signin.keys()) | set(remarks.keys())
         if not all_uids:
             return {"users": []}
 
@@ -147,6 +161,7 @@ class LimitUsePlugin(Star):
         for uid in sorted(all_uids):
             users.append({
                 "user_id": uid,
+                "remark": remarks.get(uid, ""),
                 "remaining": quota.get(uid, self.config["default_quota"]),
                 "total_used": usage.get(uid, 0),
                 "last_signin": signin.get(uid, ""),
@@ -166,6 +181,16 @@ class LimitUsePlugin(Star):
             "remaining": quota[user_id],
             "total_used": usage.get(user_id, 0),
         }
+
+    async def api_set_remark(self, user_id: str, remark: str):
+        """设置用户备注"""
+        remarks = await self._get_remarks()
+        if remark == "_clear_":
+            remarks.pop(user_id, None)
+        else:
+            remarks[user_id] = remark
+        await self._save_remarks(remarks)
+        return {"ok": True, "user_id": user_id, "remark": remarks.get(user_id, "")}
 
     # ══════════════════════════════════════════════
     #  插件销毁
