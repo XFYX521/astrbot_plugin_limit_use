@@ -3,16 +3,6 @@ from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger, AstrBotConfig
 
-# ── 尝试导入 Web API 模块（新版 AstrBot 才支持） ──
-try:
-    from astrbot.api.web import json_response, error_response, request
-    _WEB_API_AVAILABLE = True
-except ImportError:
-    _WEB_API_AVAILABLE = False
-    json_response = None
-    error_response = None
-    request = None
-
 PLUGIN_NAME = "astrbot_plugin_limit_use"
 
 
@@ -27,23 +17,7 @@ class LimitUsePlugin(Star):
         super().__init__(context)
         self.config = config
 
-        # ── 注册 Web API（仅当新版 AstrBot 可用时） ──
-        if _WEB_API_AVAILABLE:
-            context.register_web_api(
-                f"/{PLUGIN_NAME}/users",
-                self.api_get_users,
-                ["GET"],
-                "获取所有用户的次数数据",
-            )
-            context.register_web_api(
-                f"/{PLUGIN_NAME}/users/<user_id>",
-                self.api_update_user,
-                ["POST"],
-                "修改指定用户的次数数据",
-            )
-            logger.info("LimitUsePlugin: Web API 已注册，可在 WebUI 管理用户次数。")
-        else:
-            logger.info("LimitUsePlugin: 当前 AstrBot 版本不支持 Web API，跳过。")
+        logger.info("LimitUsePlugin 已加载")
 
     # ══════════════════════════════════════════════
     #  KV 工具方法
@@ -158,54 +132,6 @@ class LimitUsePlugin(Star):
             "└ /我的余额 — 查看剩余对话次数"
         )
         yield event.plain_result(msg)
-
-    # ══════════════════════════════════════════════
-    #  Web API —— 用户数据管理（仅新版 AstrBot 可用）
-    # ══════════════════════════════════════════════
-
-    if _WEB_API_AVAILABLE:
-
-        async def api_get_users(self):
-            """获取所有用户的次数数据"""
-            quota = await self._get_quota()
-            usage = await self._get_total_usage()
-            signin = await self._get_signin()
-
-            all_uids = set(quota.keys()) | set(usage.keys()) | set(signin.keys())
-            if not all_uids:
-                return json_response({"users": []})
-
-            users = []
-            for uid in sorted(all_uids):
-                users.append({
-                    "user_id": uid,
-                    "remaining": quota.get(uid, self.config["default_quota"]),
-                    "total_used": usage.get(uid, 0),
-                    "last_signin": signin.get(uid, ""),
-                })
-            return json_response({"users": users})
-
-        async def api_update_user(self, user_id: str):
-            """修改指定用户的次数数据"""
-            payload = await request.json(default={})
-
-            quota = await self._get_quota()
-            usage = await self._get_total_usage()
-
-            if "remaining" in payload:
-                quota[user_id] = int(payload["remaining"])
-            if "total_used" in payload:
-                usage[user_id] = int(payload["total_used"])
-
-            await self._save_quota(quota)
-            await self._save_total_usage(usage)
-
-            return json_response({
-                "ok": True,
-                "user_id": user_id,
-                "remaining": quota.get(user_id, self.config["default_quota"]),
-                "total_used": usage.get(user_id, 0),
-            })
 
     # ══════════════════════════════════════════════
     #  插件销毁
