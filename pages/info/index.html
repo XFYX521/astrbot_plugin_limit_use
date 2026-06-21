@@ -32,6 +32,7 @@
       padding: 20px;
     }
     h1 { font-size: 20px; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+    .h1-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 
     .stats-bar {
       display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
@@ -79,6 +80,8 @@
     }
     .btn-edit { background: var(--border); color: var(--text); }
     .btn-edit:hover { background: #ccc; }
+    .btn-refresh { background: var(--primary); color: #fff; }
+    .btn-refresh:hover { background: var(--primary-hover); }
 
     .btn-group { display: flex; gap: 6px; align-items: center; }
     .btn-plus10  { background: #22c55e; color: #fff; }
@@ -139,7 +142,12 @@
 </head>
 <body>
 
-  <h1>📊 用户次数管理</h1>
+  <h1>
+    📊 用户次数管理
+    <span class="h1-right">
+      <button class="btn btn-refresh" id="btnRefresh">🔄 刷新</button>
+    </span>
+  </h1>
 
   <div class="stats-bar" id="statsBar"></div>
   <div id="tableWrap"><div class="loading">加载中...</div></div>
@@ -152,6 +160,9 @@
     const statsBar = document.getElementById('statsBar');
     const tableWrap = document.getElementById('tableWrap');
     const toastEl = document.getElementById('toast');
+    const btnRefresh = document.getElementById('btnRefresh');
+
+    btnRefresh.addEventListener('click', () => { loadData(); toast('已刷新'); });
 
     function toast(msg, type = 'success') {
       toastEl.textContent = msg;
