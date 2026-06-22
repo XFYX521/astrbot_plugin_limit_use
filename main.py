@@ -10,7 +10,7 @@ PLUGIN_NAME = "astrbot_plugin_limit_use"
     PLUGIN_NAME,
     "XFYX521",
     "给QQ用户设置对话次数额度，用完需签到补充。",
-    "1.0.4",
+    "1.0.5",
 )
 class LimitUsePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -32,7 +32,7 @@ class LimitUsePlugin(Star):
                 "修改指定用户的剩余次数",
             )
             context.register_web_api(
-                f"/{PLUGIN_NAME}/remark/<user_id>/<remark>",
+                f"/{PLUGIN_NAME}/remark/<user_id>",
                 self.api_set_remark,
                 ["GET"],
                 "设置用户备注",
@@ -182,13 +182,19 @@ class LimitUsePlugin(Star):
             "total_used": usage.get(user_id, 0),
         }
 
-    async def api_set_remark(self, user_id: str, remark: str):
-        """设置用户备注"""
+    async def api_set_remark(self, user_id: str):
+        """设置用户备注（query 参数 ?text=xxx）"""
+        try:
+            from quart import request as req
+            text = req.args.get("text", "")
+        except Exception:
+            text = ""
+
         remarks = await self._get_remarks()
-        if remark == "_clear_":
+        if not text:
             remarks.pop(user_id, None)
         else:
-            remarks[user_id] = remark
+            remarks[user_id] = text
         await self._save_remarks(remarks)
         return {"ok": True, "user_id": user_id, "remark": remarks.get(user_id, "")}
 

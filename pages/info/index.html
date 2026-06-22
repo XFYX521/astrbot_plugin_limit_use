@@ -269,11 +269,12 @@
 
       async function save() {
         const val = input.value.trim();
-        const endpoint = val
-          ? `remark/${uid}/${encodeURIComponent(val)}`
-          : `remark/${uid}/_clear_`;
         try {
-          await bridge.apiGet(endpoint);
+          if (val) {
+            await bridge.apiGet(`remark/${uid}`, { text: val });
+          } else {
+            await bridge.apiGet(`remark/${uid}`, { text: '' });
+          }
           loadData();
         } catch (e) {
           toast(`备注保存失败: ${e.message}`, 'error');
