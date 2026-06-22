@@ -85,6 +85,14 @@ class LimitUsePlugin(Star):
         except Exception as e:
             logger.warning(f"LimitUsePlugin: Web API 注册失败 ({e})，跳过")
 
+        self._log_task = None
+
+    async def initialize(self):
+        """插件初始化后启动定时日志任务"""
+        import asyncio
+        self._log_task = asyncio.create_task(self._daily_log_loop())
+        logger.info("LimitUsePlugin: Token 日报定时任务已启动")
+
     # ══════════════════════════════════════════════
     #  KV 工具方法
     # ══════════════════════════════════════════════
@@ -306,5 +314,46 @@ class LimitUsePlugin(Star):
         await self._save_remarks(remarks)
         return {"ok": True, "user_id": user_id, "remark": remarks.get(user_id, "")}
 
+    # ══════════════════════════════════════════════
+    #  定时任务 —— 每天0点写入 Token 日报日志
+    # ══════════════════════════════════════════════
+
+    async def _daily_log_loop(self):
+        """每天0点写入前一天的 Token 消耗日志"""
+        import asyncio
+        while True:
+            now = datetime.datetime.now()
+            next_midnight = (now + datetime.timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            wait = (next_midnight - now).total_seconds()
+            await asyncio.sleep(wait)
+            await self._log_yesterday_tokens()
+
+    async def _log_yesterday_tokens(self):
+        """将前一天的 Token 消耗写入日志"""
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        daily = await self._get_daily_tokens()
+
+        lines = []
+        day_total = 0
+        for uid, days in sorted(daily.items()):
+            if yesterday in days:
+                tok = days[yesterday]
+                lines.append(f"  {uid} | {tok}")
+                day_total += tok
+
+        if lines:
+            logger.info(f"─── Token 日报 [{yesterday}] ───")
+            for line in lines:
+                logger.info(line)
+            logger.info(f"当日总计: {day_total} tokens")
+            logger.info(f"────────────────────────────")
+        else:
+            logger.info(f"─── Token 日报 [{yesterday}] ─── 无数据")
+
     async def terminate(self):
+        """插件卸载/停用时调用"""
+        if hasattr(self, '_log_task') and self._log_task:
+            self._log_task.cancel()
         logger.info("LimitUsePlugin 已卸载")

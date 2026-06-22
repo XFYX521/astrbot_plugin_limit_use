@@ -171,6 +171,13 @@
       setTimeout(() => toastEl.classList.remove('show'), 2000);
     }
 
+    function fmtTokens(n) {
+      n = n || 0;
+      if (n >= 1000000) return (n / 1000000).toFixed(2) + 'M';
+      if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
+      return n.toString();
+    }
+
     btnRefresh.addEventListener('click', () => { loadData(); toast('已刷新'); });
 
     // ── 加载数据 ──
@@ -200,8 +207,8 @@
         <div class="stat-card"><div class="label">用户总数</div><div class="value">${total}</div></div>
         <div class="stat-card"><div class="label">累积调用</div><div class="value">${usedSum}</div></div>
         <div class="stat-card"><div class="label">剩余总次数</div><div class="value">${remainSum}</div></div>
-        <div class="stat-card"><div class="label">累积 Token</div><div class="value">${metaData.total_tokens_sum.toLocaleString()}</div></div>
-        <div class="stat-card"><div class="label">今日 Token</div><div class="value">${metaData.today_tokens_sum.toLocaleString()}</div></div>
+        <div class="stat-card"><div class="label">累积 Token</div><div class="value">${fmtTokens(metaData.total_tokens_sum)}</div></div>
+        <div class="stat-card"><div class="label">今日 Token</div><div class="value">${fmtTokens(metaData.today_tokens_sum)}</div></div>
         <div class="stat-card"><div class="label">平均 Token</div><div class="value">${avgK}k</div></div>
       `;
     }
@@ -238,8 +245,8 @@
           <td><div class="td-remark">${remarkHtml}</div></td>
           <td><span class="num">${u.total_used}</span></td>
           <td><span class="num td-remain" id="r-${u.user_id}">${u.remaining}</span></td>
-          <td><span class="num" style="color:var(--primary)">${(u.today_tokens || 0).toLocaleString()}</span></td>
-          <td><span class="num">${(u.total_tokens || 0).toLocaleString()}</span></td>
+          <td><span class="num" style="color:var(--primary)">${fmtTokens(u.today_tokens)}</span></td>
+          <td><span class="num">${fmtTokens(u.total_tokens)}</span></td>
           <td><span class="num">${u.avg_tokens_k || 0}k</span></td>
           <td>
             <div class="btn-group">
