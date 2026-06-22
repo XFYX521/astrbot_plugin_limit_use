@@ -137,6 +137,10 @@ class LimitUsePlugin(Star):
 
         admin_list = self.config.get("admin_users", [])
         if user_id in admin_list:
+            # 管理员不扣次数，但仍记录累积调用
+            usage = await self._get_total_usage()
+            usage[user_id] = usage.get(user_id, 0) + 1
+            await self._save_total_usage(usage)
             return
 
         quota = await self._get_quota()
