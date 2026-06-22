@@ -254,14 +254,18 @@ class LimitUsePlugin(Star):
         users = []
         for uid in sorted(all_uids):
             user_daily = daily_tokens.get(uid, {})
+            total_used = usage.get(uid, 0)
+            total_tok = total_tokens.get(uid, 0)
+            avg_k = round(total_tok / total_used / 1000, 1) if total_used > 0 else 0
             users.append({
                 "user_id": uid,
                 "remark": remarks.get(uid, ""),
                 "remaining": quota.get(uid, self.config["default_quota"]),
-                "total_used": usage.get(uid, 0),
+                "total_used": total_used,
                 "last_signin": signin.get(uid, ""),
-                "total_tokens": total_tokens.get(uid, 0),
+                "total_tokens": total_tok,
                 "today_tokens": user_daily.get(today, 0),
+                "avg_tokens_k": avg_k,
             })
 
         return {

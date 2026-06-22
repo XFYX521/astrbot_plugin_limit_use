@@ -1,5 +1,10 @@
 # 更新日志
 
+## v1.0.9
+
+- ✨ 新增平均 Token 列（累积 Token ÷ 累积调用，以 k 为单位）
+- ✨ 统计栏新增总体平均 Token
+
 ## v1.0.8
 
 - 🐛 修复 Token 计量不准：明确取 prompt_tokens + completion_tokens（含缓存输入）

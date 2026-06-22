@@ -195,12 +195,14 @@
       const total = usersData.length;
       const usedSum = usersData.reduce((s, u) => s + u.total_used, 0);
       const remainSum = usersData.reduce((s, u) => s + u.remaining, 0);
+      const avgK = usedSum > 0 ? (metaData.total_tokens_sum / usedSum / 1000).toFixed(1) : 0;
       statsBar.innerHTML = `
         <div class="stat-card"><div class="label">用户总数</div><div class="value">${total}</div></div>
         <div class="stat-card"><div class="label">累积调用</div><div class="value">${usedSum}</div></div>
         <div class="stat-card"><div class="label">剩余总次数</div><div class="value">${remainSum}</div></div>
         <div class="stat-card"><div class="label">累积 Token</div><div class="value">${metaData.total_tokens_sum.toLocaleString()}</div></div>
         <div class="stat-card"><div class="label">今日 Token</div><div class="value">${metaData.today_tokens_sum.toLocaleString()}</div></div>
+        <div class="stat-card"><div class="label">平均 Token</div><div class="value">${avgK}k</div></div>
       `;
     }
 
@@ -222,6 +224,7 @@
           <th>剩余次数</th>
           <th>今日 Token</th>
           <th>累积 Token</th>
+          <th>平均 Token</th>
           <th>操作</th>
         </tr></thead><tbody>`;
 
@@ -237,6 +240,7 @@
           <td><span class="num td-remain" id="r-${u.user_id}">${u.remaining}</span></td>
           <td><span class="num" style="color:var(--primary)">${(u.today_tokens || 0).toLocaleString()}</span></td>
           <td><span class="num">${(u.total_tokens || 0).toLocaleString()}</span></td>
+          <td><span class="num">${u.avg_tokens_k || 0}k</span></td>
           <td>
             <div class="btn-group">
               <button class="btn btn-plus10"  data-uid="${u.user_id}" data-delta="10">+10</button>
