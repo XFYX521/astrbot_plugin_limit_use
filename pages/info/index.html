@@ -150,11 +150,6 @@
 
   <div class="stats-bar" id="statsBar"></div>
 
-  <div class="tabs">
-    <button class="tab active" data-tab="total">📊 总消耗</button>
-    <button class="tab" data-tab="daily">📅 当日消耗</button>
-  </div>
-
   <div id="tableWrap"><div class="loading">加载中...</div></div>
   <div id="toast" class="toast"></div>
 
@@ -167,7 +162,6 @@
     const toastEl = document.getElementById('toast');
     const btnRefresh = document.getElementById('btnRefresh');
 
-    let currentTab = 'total';
     let usersData = [];
     let metaData = {};
 
@@ -178,16 +172,6 @@
     }
 
     btnRefresh.addEventListener('click', () => { loadData(); toast('已刷新'); });
-
-    // ── Tab 切换 ──
-    document.querySelectorAll('.tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        currentTab = tab.dataset.tab;
-        renderTable();
-      });
-    });
 
     // ── 加载数据 ──
     async function loadData() {
@@ -227,12 +211,8 @@
         return;
       }
 
-      const isTotal = currentTab === 'total';
-      const tokenLabel = isTotal ? '累积 Token' : '今日 Token';
-      const tokenKey = isTotal ? 'total_tokens' : 'today_tokens';
-
-      // 按 token 数降序排列
-      const sorted = [...usersData].sort((a, b) => (b[tokenKey] || 0) - (a[tokenKey] || 0));
+      // 按累积 token 降序
+      const sorted = [...usersData].sort((a, b) => (b.total_tokens || 0) - (a.total_tokens || 0));
 
       let html = `<table>
         <thead><tr>
@@ -240,7 +220,8 @@
           <th>备注</th>
           <th>已调用</th>
           <th>剩余次数</th>
-          <th>${tokenLabel}</th>
+          <th>今日 Token</th>
+          <th>累积 Token</th>
           <th>操作</th>
         </tr></thead><tbody>`;
 
@@ -249,14 +230,13 @@
           ? `<span class="remark-text" title="点击编辑备注">${escapeHtml(u.remark)}</span>`
           : `<span class="remark-empty">+ 添加备注</span>`;
 
-        const tokens = u[tokenKey] || 0;
-
         html += `<tr data-uid="${u.user_id}">
           <td><strong>${u.user_id}</strong></td>
           <td><div class="td-remark">${remarkHtml}</div></td>
           <td><span class="num">${u.total_used}</span></td>
           <td><span class="num td-remain" id="r-${u.user_id}">${u.remaining}</span></td>
-          <td><span class="num" style="color:var(--primary)">${tokens.toLocaleString()}</span></td>
+          <td><span class="num" style="color:var(--primary)">${(u.today_tokens || 0).toLocaleString()}</span></td>
+          <td><span class="num">${(u.total_tokens || 0).toLocaleString()}</span></td>
           <td>
             <div class="btn-group">
               <button class="btn btn-plus10"  data-uid="${u.user_id}" data-delta="10">+10</button>
