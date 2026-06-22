@@ -6,24 +6,52 @@ from astrbot.api import logger, AstrBotConfig
 PLUGIN_NAME = "astrbot_plugin_limit_use"
 
 
+def _extract_tokens(resp) -> int:
+    """从 LLMResponse 中提取 token 消耗数"""
+    raw = getattr(resp, "raw_completion", None)
+    if raw is None:
+        return 0
+    try:
+        # OpenAI / 兼容格式
+        if hasattr(raw, "usage") and raw.usage is not None:
+            total = getattr(raw.usage, "total_tokens", None)
+            if total is not None and isinstance(total, int):
+                return total
+            # 如果没 total_tokens 就加一下
+            inp = getattr(raw.usage, "prompt_tokens", 0) or 0
+            out = getattr(raw.usage, "completion_tokens", 0) or 0
+            return inp + out
+        # Google Gemini
+        if hasattr(raw, "usage_metadata") and raw.usage_metadata is not None:
+            return getattr(raw.usage_metadata, "total_token_count", 0) or 0
+        # Anthropic
+        if hasattr(raw, "usage") and raw.usage is not None:
+            inp = getattr(raw.usage, "input_tokens", 0) or 0
+            out = getattr(raw.usage, "output_tokens", 0) or 0
+            return inp + out
+    except Exception:
+        pass
+    return 0
+
+
 @register(
     PLUGIN_NAME,
     "XFYX521",
     "给QQ用户设置对话次数额度，用完需签到补充。",
-    "1.0.5",
+    "1.0.6",
 )
 class LimitUsePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.config = config
 
-        # ── Web API（供 WebUI 管理页面使用） ──
+        # ── Web API ──
         try:
             context.register_web_api(
                 f"/{PLUGIN_NAME}/users",
                 self.api_get_users,
                 ["GET"],
-                "获取所有用户的次数数据",
+                "获取所有用户的次数/Tokens数据",
             )
             context.register_web_api(
                 f"/{PLUGIN_NAME}/update/<user_id>/<int:remaining>",
@@ -64,14 +92,27 @@ class LimitUsePlugin(Star):
         await self.put_kv_data("user_total_usage", data)
 
     async def _get_remarks(self) -> dict:
-        """获取用户备注 {uid: remark}"""
         return await self.get_kv_data("user_remarks", {}) or {}
 
     async def _save_remarks(self, data: dict):
         await self.put_kv_data("user_remarks", data)
 
+    async def _get_total_tokens(self) -> dict:
+        """{uid: total_tokens}"""
+        return await self.get_kv_data("user_total_tokens", {}) or {}
+
+    async def _save_total_tokens(self, data: dict):
+        await self.put_kv_data("user_total_tokens", data)
+
+    async def _get_daily_tokens(self) -> dict:
+        """{uid: {date: tokens}}"""
+        return await self.get_kv_data("user_daily_tokens", {}) or {}
+
+    async def _save_daily_tokens(self, data: dict):
+        await self.put_kv_data("user_daily_tokens", data)
+
     # ══════════════════════════════════════════════
-    #  LLM 请求钩子 —— 每次调 LLM 前扣减次数
+    #  LLM 请求钩子 —— 扣减次数
     # ══════════════════════════════════════════════
 
     @filter.on_llm_request()
@@ -97,6 +138,32 @@ class LimitUsePlugin(Star):
         usage = await self._get_total_usage()
         usage[user_id] = usage.get(user_id, 0) + 1
         await self._save_total_usage(usage)
+
+    # ══════════════════════════════════════════════
+    #  LLM 响应钩子 —— 记录 Token 消耗
+    # ══════════════════════════════════════════════
+
+    @filter.on_llm_response()
+    async def on_llm_resp(self, event: AstrMessageEvent, resp: "LLMResponse"):
+        """LLM 响应后记录 token 消耗"""
+        tokens = _extract_tokens(resp)
+        if tokens <= 0:
+            return
+
+        user_id = event.get_sender_id()
+        today = datetime.date.today().isoformat()
+
+        # 累积 token
+        total = await self._get_total_tokens()
+        total[user_id] = total.get(user_id, 0) + tokens
+        await self._save_total_tokens(total)
+
+        # 当日 token
+        daily = await self._get_daily_tokens()
+        user_daily = daily.get(user_id, {})
+        user_daily[today] = user_daily.get(today, 0) + tokens
+        daily[user_id] = user_daily
+        await self._save_daily_tokens(daily)
 
     # ══════════════════════════════════════════════
     #  指令
@@ -143,33 +210,51 @@ class LimitUsePlugin(Star):
         yield event.plain_result(msg)
 
     # ══════════════════════════════════════════════
-    #  Web API —— 返回 dict 即可（自动转 JSON）
+    #  Web API
     # ══════════════════════════════════════════════
 
     async def api_get_users(self):
-        """返回所有用户的次数数据"""
+        """返回所有用户的次数 + Token 数据"""
         quota = await self._get_quota()
         usage = await self._get_total_usage()
         signin = await self._get_signin()
         remarks = await self._get_remarks()
+        total_tokens = await self._get_total_tokens()
+        daily_tokens = await self._get_daily_tokens()
+        today = datetime.date.today().isoformat()
 
-        all_uids = set(quota.keys()) | set(usage.keys()) | set(signin.keys()) | set(remarks.keys())
+        all_uids = (
+            set(quota.keys()) | set(usage.keys()) | set(signin.keys())
+            | set(remarks.keys()) | set(total_tokens.keys()) | set(daily_tokens.keys())
+        )
         if not all_uids:
             return {"users": []}
 
+        today_tokens_sum = sum(
+            d.get(today, 0) for d in daily_tokens.values()
+        )
+        total_tokens_sum = sum(total_tokens.values())
+
         users = []
         for uid in sorted(all_uids):
+            user_daily = daily_tokens.get(uid, {})
             users.append({
                 "user_id": uid,
                 "remark": remarks.get(uid, ""),
                 "remaining": quota.get(uid, self.config["default_quota"]),
                 "total_used": usage.get(uid, 0),
                 "last_signin": signin.get(uid, ""),
+                "total_tokens": total_tokens.get(uid, 0),
+                "today_tokens": user_daily.get(today, 0),
             })
-        return {"users": users}
+
+        return {
+            "users": users,
+            "today_tokens_sum": today_tokens_sum,
+            "total_tokens_sum": total_tokens_sum,
+        }
 
     async def api_update_user(self, user_id: str, remaining: int):
-        """修改指定用户的剩余次数"""
         quota = await self._get_quota()
         quota[user_id] = max(0, remaining)
         await self._save_quota(quota)
@@ -183,7 +268,6 @@ class LimitUsePlugin(Star):
         }
 
     async def api_set_remark(self, user_id: str):
-        """设置用户备注（query 参数 ?text=xxx）"""
         try:
             from quart import request as req
             text = req.args.get("text", "")
@@ -197,10 +281,6 @@ class LimitUsePlugin(Star):
             remarks[user_id] = text
         await self._save_remarks(remarks)
         return {"ok": True, "user_id": user_id, "remark": remarks.get(user_id, "")}
-
-    # ══════════════════════════════════════════════
-    #  插件销毁
-    # ══════════════════════════════════════════════
 
     async def terminate(self):
         logger.info("LimitUsePlugin 已卸载")

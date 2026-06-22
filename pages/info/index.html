@@ -12,8 +12,6 @@
       --text-secondary: #666;
       --primary: #6366f1;
       --primary-hover: #4f46e5;
-      --danger: #ef4444;
-      --success: #22c55e;
     }
     [data-theme="dark"] {
       --bg: #1a1a2e;
@@ -31,7 +29,10 @@
       color: var(--text);
       padding: 20px;
     }
-    h1 { font-size: 20px; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+    h1 {
+      font-size: 20px; margin-bottom: 16px;
+      display: flex; align-items: center; gap: 10px;
+    }
     .h1-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 
     .stats-bar {
@@ -42,10 +43,24 @@
       border: 1px solid var(--border);
       border-radius: 10px;
       padding: 12px 18px;
-      flex: 1; min-width: 120px;
+      flex: 1; min-width: 100px;
     }
     .stat-card .label { font-size: 12px; color: var(--text-secondary); }
     .stat-card .value { font-size: 22px; font-weight: 700; margin-top: 2px; }
+
+    .tabs {
+      display: flex; gap: 8px; margin-bottom: 12px;
+    }
+    .tab {
+      padding: 8px 18px; border-radius: 8px; cursor: pointer;
+      font-size: 14px; font-weight: 600;
+      background: var(--border); color: var(--text-secondary);
+      border: none; transition: 0.15s;
+    }
+    .tab.active {
+      background: var(--primary); color: #fff;
+    }
+    .tab:hover:not(.active) { background: #ccc; }
 
     table {
       width: 100%;
@@ -70,7 +85,7 @@
     td { font-size: 14px; vertical-align: middle; }
     tr:last-child td { border-bottom: none; }
 
-    .num { font-weight: 600; font-size: 16px; min-width: 40px; display: inline-block; text-align: center; }
+    .num { font-weight: 600; font-size: 15px; min-width: 36px; display: inline-block; text-align: center; }
 
     .btn {
       border: none; border-radius: 6px;
@@ -78,8 +93,6 @@
       padding: 5px 12px; min-width: 42px;
       transition: background 0.15s;
     }
-    .btn-edit { background: var(--border); color: var(--text); }
-    .btn-edit:hover { background: #ccc; }
     .btn-refresh { background: var(--primary); color: #fff; }
     .btn-refresh:hover { background: var(--primary-hover); }
 
@@ -94,38 +107,24 @@
     .btn-minus10:hover { background: #dc2626; }
 
     .remark-text {
-      cursor: pointer;
-      padding: 3px 8px;
-      border-radius: 4px;
-      display: inline-block;
-      max-width: 120px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      cursor: pointer; padding: 3px 8px; border-radius: 4px;
+      display: inline-block; max-width: 100px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
     .remark-text:hover { background: var(--border); }
     .remark-empty {
-      color: var(--text-secondary);
-      font-style: italic;
-      cursor: pointer;
-      padding: 3px 8px;
-      border-radius: 4px;
+      color: var(--text-secondary); font-style: italic;
+      cursor: pointer; padding: 3px 8px; border-radius: 4px;
     }
     .remark-empty:hover { background: var(--border); }
     .remark-input {
-      padding: 4px 8px;
-      border: 1px solid var(--primary);
-      border-radius: 4px;
-      font-size: 13px;
-      width: 120px;
-      background: var(--bg);
-      color: var(--text);
-      outline: none;
+      padding: 4px 8px; border: 1px solid var(--primary);
+      border-radius: 4px; font-size: 13px; width: 100px;
+      background: var(--bg); color: var(--text); outline: none;
     }
 
     .empty-state, .loading {
-      text-align: center; padding: 40px 20px;
-      color: var(--text-secondary);
+      text-align: center; padding: 40px 20px; color: var(--text-secondary);
     }
 
     .toast {
@@ -143,13 +142,19 @@
 <body>
 
   <h1>
-    📊 用户次数管理
+    📊 用户管理
     <span class="h1-right">
       <button class="btn btn-refresh" id="btnRefresh">🔄 刷新</button>
     </span>
   </h1>
 
   <div class="stats-bar" id="statsBar"></div>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="total">📊 总消耗</button>
+    <button class="tab" data-tab="daily">📅 当日消耗</button>
+  </div>
+
   <div id="tableWrap"><div class="loading">加载中...</div></div>
   <div id="toast" class="toast"></div>
 
@@ -162,7 +167,9 @@
     const toastEl = document.getElementById('toast');
     const btnRefresh = document.getElementById('btnRefresh');
 
-    btnRefresh.addEventListener('click', () => { loadData(); toast('已刷新'); });
+    let currentTab = 'total';
+    let usersData = [];
+    let metaData = {};
 
     function toast(msg, type = 'success') {
       toastEl.textContent = msg;
@@ -170,30 +177,62 @@
       setTimeout(() => toastEl.classList.remove('show'), 2000);
     }
 
+    btnRefresh.addEventListener('click', () => { loadData(); toast('已刷新'); });
+
+    // ── Tab 切换 ──
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        currentTab = tab.dataset.tab;
+        renderTable();
+      });
+    });
+
+    // ── 加载数据 ──
     async function loadData() {
       tableWrap.innerHTML = '<div class="loading">加载中...</div>';
       try {
         const res = await bridge.apiGet('users');
-        render(res.users || []);
+        usersData = res.users || [];
+        metaData = {
+          today_tokens_sum: res.today_tokens_sum || 0,
+          total_tokens_sum: res.total_tokens_sum || 0,
+        };
+        renderStats();
+        renderTable();
       } catch (e) {
         tableWrap.innerHTML = `<div class="loading" style="color:#ef4444;">加载失败: ${e.message}</div>`;
       }
     }
 
-    function render(users) {
-      const total = users.length;
-      const usedSum = users.reduce((s, u) => s + u.total_used, 0);
-      const remainSum = users.reduce((s, u) => s + u.remaining, 0);
+    // ── 统计栏 ──
+    function renderStats() {
+      const total = usersData.length;
+      const usedSum = usersData.reduce((s, u) => s + u.total_used, 0);
+      const remainSum = usersData.reduce((s, u) => s + u.remaining, 0);
       statsBar.innerHTML = `
         <div class="stat-card"><div class="label">用户总数</div><div class="value">${total}</div></div>
         <div class="stat-card"><div class="label">累积调用</div><div class="value">${usedSum}</div></div>
         <div class="stat-card"><div class="label">剩余总次数</div><div class="value">${remainSum}</div></div>
+        <div class="stat-card"><div class="label">累积 Token</div><div class="value">${metaData.total_tokens_sum.toLocaleString()}</div></div>
+        <div class="stat-card"><div class="label">今日 Token</div><div class="value">${metaData.today_tokens_sum.toLocaleString()}</div></div>
       `;
+    }
 
-      if (!users.length) {
+    // ── 表格 ──
+    function renderTable() {
+      if (!usersData.length) {
         tableWrap.innerHTML = '<div class="empty-state">暂无用户数据</div>';
         return;
       }
+
+      const isTotal = currentTab === 'total';
+      const tokenLabel = isTotal ? '累积 Token' : '今日 Token';
+      const tokenKey = isTotal ? 'total_tokens' : 'today_tokens';
+
+      // 按 token 数降序排列
+      const sorted = [...usersData].sort((a, b) => (b[tokenKey] || 0) - (a[tokenKey] || 0));
 
       let html = `<table>
         <thead><tr>
@@ -201,19 +240,23 @@
           <th>备注</th>
           <th>已调用</th>
           <th>剩余次数</th>
+          <th>${tokenLabel}</th>
           <th>操作</th>
         </tr></thead><tbody>`;
 
-      for (const u of users) {
+      for (const u of sorted) {
         const remarkHtml = u.remark
-          ? `<span class="remark-text" title="点击编辑备注">${u.remark}</span>`
+          ? `<span class="remark-text" title="点击编辑备注">${escapeHtml(u.remark)}</span>`
           : `<span class="remark-empty">+ 添加备注</span>`;
+
+        const tokens = u[tokenKey] || 0;
 
         html += `<tr data-uid="${u.user_id}">
           <td><strong>${u.user_id}</strong></td>
           <td><div class="td-remark">${remarkHtml}</div></td>
           <td><span class="num">${u.total_used}</span></td>
           <td><span class="num td-remain" id="r-${u.user_id}">${u.remaining}</span></td>
+          <td><span class="num" style="color:var(--primary)">${tokens.toLocaleString()}</span></td>
           <td>
             <div class="btn-group">
               <button class="btn btn-plus10"  data-uid="${u.user_id}" data-delta="10">+10</button>
@@ -228,7 +271,7 @@
       html += '</tbody></table>';
       tableWrap.innerHTML = html;
 
-      // 绑定备注点击
+      // 绑定备注
       tableWrap.querySelectorAll('.td-remark').forEach(el => {
         el.addEventListener('click', () => enterRemark(el));
       });
@@ -253,6 +296,12 @@
       });
     }
 
+    function escapeHtml(s) {
+      const div = document.createElement('div');
+      div.textContent = s;
+      return div.innerHTML;
+    }
+
     // ── 编辑备注 ──
     function enterRemark(td) {
       const tr = td.closest('tr');
@@ -262,7 +311,7 @@
         ? td.querySelector('.remark-text').textContent
         : '';
 
-      td.innerHTML = `<input class="remark-input" value="${oldText}" placeholder="输入备注" maxlength="20" />`;
+      td.innerHTML = `<input class="remark-input" value="${oldText}" placeholder="备注" maxlength="20" />`;
       const input = td.querySelector('input');
       input.focus();
       input.select();
@@ -270,11 +319,7 @@
       async function save() {
         const val = input.value.trim();
         try {
-          if (val) {
-            await bridge.apiGet(`remark/${uid}`, { text: val });
-          } else {
-            await bridge.apiGet(`remark/${uid}`, { text: '' });
-          }
+          await bridge.apiGet(`remark/${uid}`, { text: val });
           loadData();
         } catch (e) {
           toast(`备注保存失败: ${e.message}`, 'error');

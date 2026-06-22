@@ -1,5 +1,12 @@
 # 更新日志
 
+## v1.0.6
+
+- ✨ 新增 Token 消耗统计
+- ✨ WebUI 增加「总消耗 / 当日消耗」Tab 切换视图
+- ✨ 顶部统计栏显示累积 Token 和今日 Token
+- 🔧 新增 `on_llm_response` 钩子自动记录 Token
+
 ## v1.0.5
 
 - 🐛 修复中文备注显示为 URL 编码的问题（改用 query 参数传递）
