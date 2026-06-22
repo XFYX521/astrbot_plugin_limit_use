@@ -1,5 +1,10 @@
 # 更新日志
 
+## v1.0.8
+
+- 🐛 修复 Token 计量不准：明确取 prompt_tokens + completion_tokens（含缓存输入）
+- 🔧 _extract_tokens 同时支持对象和字典格式的 usage
+
 ## v1.0.7
 
 - 💄 简化 WebUI：去掉「总消耗/当日消耗」Tab 切换

@@ -6,28 +6,44 @@ from astrbot.api import logger, AstrBotConfig
 PLUGIN_NAME = "astrbot_plugin_limit_use"
 
 
+def _get_attr(obj, attr, default=0):
+    """安全获取属性或字典键"""
+    if obj is None:
+        return default
+    if isinstance(obj, dict):
+        return obj.get(attr, default) or default
+    return getattr(obj, attr, default) or default
+
+
 def _extract_tokens(resp) -> int:
-    """从 LLMResponse 中提取 token 消耗数"""
+    """从 LLMResponse 中提取 token 消耗数 = prompt_tokens + completion_tokens（含缓存）"""
     raw = getattr(resp, "raw_completion", None)
     if raw is None:
         return 0
     try:
-        # OpenAI / 兼容格式
-        if hasattr(raw, "usage") and raw.usage is not None:
-            total = getattr(raw.usage, "total_tokens", None)
-            if total is not None and isinstance(total, int):
+        usage = _get_attr(raw, "usage", None)
+        if usage and usage != 0:
+            # OpenAI / 兼容格式
+            prompt = _get_attr(usage, "prompt_tokens", 0)
+            completion = _get_attr(usage, "completion_tokens", 0)
+            total = prompt + completion
+            if total > 0:
                 return total
-            # 如果没 total_tokens 就加一下
-            inp = getattr(raw.usage, "prompt_tokens", 0) or 0
-            out = getattr(raw.usage, "completion_tokens", 0) or 0
-            return inp + out
+            # fallback: total_tokens
+            total = _get_attr(usage, "total_tokens", 0)
+            if total > 0:
+                return total
+
         # Google Gemini
-        if hasattr(raw, "usage_metadata") and raw.usage_metadata is not None:
-            return getattr(raw.usage_metadata, "total_token_count", 0) or 0
+        usage_meta = _get_attr(raw, "usage_metadata", None)
+        if usage_meta and usage_meta != 0:
+            return _get_attr(usage_meta, "total_token_count", 0)
+
         # Anthropic
-        if hasattr(raw, "usage") and raw.usage is not None:
-            inp = getattr(raw.usage, "input_tokens", 0) or 0
-            out = getattr(raw.usage, "output_tokens", 0) or 0
+        usage = _get_attr(raw, "usage", None)
+        if usage and usage != 0:
+            inp = _get_attr(usage, "input_tokens", 0)
+            out = _get_attr(usage, "output_tokens", 0)
             return inp + out
     except Exception:
         pass
