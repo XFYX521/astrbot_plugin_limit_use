@@ -135,6 +135,13 @@ class LimitUsePlugin(Star):
     async def _save_daily_tokens(self, data: dict):
         await self.put_kv_data("user_daily_tokens", data)
 
+    async def _get_daily_log(self) -> dict:
+        """{date: {uid: tokens, _total: total, _date: date}}"""
+        return await self.get_kv_data("token_daily_log", {}) or {}
+
+    async def _save_daily_log(self, data: dict):
+        await self.put_kv_data("token_daily_log", data)
+
     # ══════════════════════════════════════════════
     #  LLM 请求钩子 —— 扣减次数
     # ══════════════════════════════════════════════
@@ -331,26 +338,27 @@ class LimitUsePlugin(Star):
             await self._log_yesterday_tokens()
 
     async def _log_yesterday_tokens(self):
-        """将前一天的 Token 消耗写入日志"""
+        """将前一天的 Token 消耗存入 KV 存储"""
         yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
         daily = await self._get_daily_tokens()
 
-        lines = []
+        log_entry = {}
         day_total = 0
         for uid, days in sorted(daily.items()):
             if yesterday in days:
                 tok = days[yesterday]
-                lines.append(f"  {uid} | {tok}")
+                log_entry[uid] = tok
                 day_total += tok
 
-        if lines:
-            logger.info(f"─── Token 日报 [{yesterday}] ───")
-            for line in lines:
-                logger.info(line)
-            logger.info(f"当日总计: {day_total} tokens")
-            logger.info(f"────────────────────────────")
-        else:
-            logger.info(f"─── Token 日报 [{yesterday}] ─── 无数据")
+        log_entry["_total"] = day_total
+        log_entry["_date"] = yesterday
+
+        # 保存到日报记录
+        daily_log = await self._get_daily_log()
+        daily_log[yesterday] = log_entry
+        await self._save_daily_log(daily_log)
+
+        logger.info(f"Token 日报 [{yesterday}] 已归档: {day_total} tokens")
 
     async def terminate(self):
         """插件卸载/停用时调用"""
