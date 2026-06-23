@@ -1,4 +1,5 @@
 import datetime
+import random
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api import logger, AstrBotConfig
@@ -214,7 +215,12 @@ class LimitUsePlugin(Star):
             yield event.plain_result("你今天已经签过到啦，明天再来吧(｡•ᴗ•｡)")
             return
 
-        bonus = self.config["daily_bonus"]
+        bonus_min = self.config["daily_bonus_min"]
+        bonus_max = self.config["daily_bonus_max"]
+        bonus = random.randint(
+            min(bonus_min, bonus_max),
+            max(bonus_min, bonus_max),
+        )
         quota = await self._get_quota()
         current = quota.get(user_id, self.config["default_quota"])
         quota[user_id] = current + bonus

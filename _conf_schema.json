@@ -5,11 +5,17 @@
     "default": 5,
     "hint": "新用户第一次对话时会获得这个次数的额度"
   },
-  "daily_bonus": {
-    "description": "每日签到增加的对话次数",
+  "daily_bonus_min": {
+    "description": "每日签到增加次数的最小值",
     "type": "int",
     "default": 5,
-    "hint": "用户每天签到一次能获得的额外次数"
+    "hint": "签到获得的随机次数最小值，与最大值相等则为固定值"
+  },
+  "daily_bonus_max": {
+    "description": "每日签到增加次数的最大值",
+    "type": "int",
+    "default": 5,
+    "hint": "签到获得的随机次数最大值，与最小值相等则为固定值"
   },
   "limit_reply": {
     "description": "次数用完后自动回复的内容",
