@@ -143,6 +143,22 @@ class LimitUsePlugin(Star):
     async def _save_daily_log(self, data: dict):
         await self.put_kv_data("token_daily_log", data)
 
+    async def _get_daily_usage(self) -> dict:
+        """{uid: {date: count}} 每日调用次数"""
+        return await self.get_kv_data("user_daily_usage", {}) or {}
+
+    async def _save_daily_usage(self, data: dict):
+        await self.put_kv_data("user_daily_usage", data)
+
+    async def _record_daily_usage(self, user_id: str):
+        """记录用户今日调用次数 +1"""
+        today = datetime.date.today().isoformat()
+        daily = await self._get_daily_usage()
+        user_daily = daily.get(user_id, {})
+        user_daily[today] = user_daily.get(today, 0) + 1
+        daily[user_id] = user_daily
+        await self._save_daily_usage(daily)
+
     # ══════════════════════════════════════════════
     #  LLM 请求钩子 —— 扣减次数
     # ══════════════════════════════════════════════
@@ -157,6 +173,8 @@ class LimitUsePlugin(Star):
             usage = await self._get_total_usage()
             usage[user_id] = usage.get(user_id, 0) + 1
             await self._save_total_usage(usage)
+            # 记录今日调用
+            await self._record_daily_usage(user_id)
             return
 
         quota = await self._get_quota()
@@ -174,6 +192,8 @@ class LimitUsePlugin(Star):
         usage = await self._get_total_usage()
         usage[user_id] = usage.get(user_id, 0) + 1
         await self._save_total_usage(usage)
+        # 记录今日调用
+        await self._record_daily_usage(user_id)
 
     # ══════════════════════════════════════════════
     #  LLM 响应钩子 —— 记录 Token 消耗
@@ -288,11 +308,13 @@ class LimitUsePlugin(Star):
         remarks = await self._get_remarks()
         total_tokens = await self._get_total_tokens()
         daily_tokens = await self._get_daily_tokens()
+        daily_usage = await self._get_daily_usage()
         today = datetime.date.today().isoformat()
 
         all_uids = (
             set(quota.keys()) | set(usage.keys()) | set(signin.keys())
             | set(remarks.keys()) | set(total_tokens.keys()) | set(daily_tokens.keys())
+            | set(daily_usage.keys())
         )
         if not all_uids:
             return {"users": []}
@@ -316,6 +338,7 @@ class LimitUsePlugin(Star):
                 "last_signin": signin.get(uid, ""),
                 "total_tokens": total_tok,
                 "today_tokens": user_daily.get(today, 0),
+                "today_used": daily_usage.get(uid, {}).get(today, 0),
                 "avg_tokens_k": avg_k,
             })
 
