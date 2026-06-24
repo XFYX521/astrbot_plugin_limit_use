@@ -240,6 +240,33 @@ class LimitUsePlugin(Star):
         reply = self.config["quota_query_reply"].replace("{quota}", str(remain))
         yield event.plain_result(reply)
 
+    @filter.command("查看全部余额")
+    async def view_all_quota(self, event: AstrMessageEvent):
+        """管理员查看所有用户的剩余次数"""
+        user_id = event.get_sender_id()
+        admin_list = self.config.get("admin_users", [])
+        if user_id not in admin_list:
+            yield event.plain_result("你没有权限使用此指令哦(｡•ᴗ•｡)")
+            return
+
+        quota = await self._get_quota()
+        remarks = await self._get_remarks()
+        default_quota = self.config["default_quota"]
+
+        if not quota:
+            yield event.plain_result("还没有用户数据呢～")
+            return
+
+        lines = []
+        for uid in sorted(quota.keys()):
+            name = remarks.get(uid, "") or uid
+            remain = quota.get(uid, default_quota)
+            lines.append(f"《{name}》：剩余{remain}")
+
+        result = "
+".join(lines)
+        yield event.plain_result(result)
+
     @filter.command("帮助")
     async def help_cmd(self, event: AstrMessageEvent):
         msg = (
