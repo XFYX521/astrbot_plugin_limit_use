@@ -303,8 +303,7 @@ class LimitUsePlugin(Star):
         except Exception as e:
             logger.error(f"html_render 失败: {e}")
             try:
-                text = "
-".join(f"{name}    {remain}" for name, remain in items)
+                text = "\n".join(f"{name}    {remain}" for name, remain in items)
                 path2 = await self.text_to_image(f"用户  余额
 
 {text}", return_url=False)
@@ -312,8 +311,7 @@ class LimitUsePlugin(Star):
             except Exception as e2:
                 logger.error(f"text_to_image 也失败: {e2}")
                 lines = [f"{name}：剩余{remain}" for name, remain in items]
-                yield event.plain_result("
-".join(lines))
+                yield event.plain_result("\n".join(lines))
 
     @filter.command("帮助")
     async def help_cmd(self, event: AstrMessageEvent):
