@@ -261,7 +261,7 @@ class LimitUsePlugin(Star):
         for uid in sorted(quota.keys()):
             name = remarks.get(uid, "") or uid
             remain = quota.get(uid, default_quota)
-            lines.append(f"《{name}》：剩余{remain}")
+            lines.append(f"{name}：剩余{remain}")
 
         result = "\n".join(lines)
         yield event.plain_result(result)
