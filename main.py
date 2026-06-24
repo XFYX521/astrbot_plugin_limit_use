@@ -277,14 +277,28 @@ class LimitUsePlugin(Star):
             yield event.plain_result("还没有用户数据呢～")
             return
 
-        lines = []
+        items = []
         for uid in sorted(quota.keys()):
             name = remarks.get(uid, "") or uid
             remain = quota.get(uid, default_quota)
-            lines.append(f"{name}：剩余{remain}")
+            items.append((name, remain))
 
-        result = "\n".join(lines)
-        yield event.plain_result(result)
+        tmpl = """<div style="padding:20px 28px;font-family:'Microsoft YaHei','PingFang SC',sans-serif;background:#fff;border-radius:12px;">
+  <table style="width:100%;border-collapse:collapse;font-size:15px;">
+    <tr style="border-bottom:2px solid #6366f1;">
+      <th style="text-align:left;padding:10px 14px;color:#6366f1;font-size:16px;">用户</th>
+      <th style="text-align:right;padding:10px 14px;color:#6366f1;font-size:16px;">余额</th>
+    </tr>
+    {% for name, remain in items %}
+    <tr style="border-bottom:1px solid #e8e8e8;">
+      <td style="text-align:left;padding:8px 14px;color:#333;">{{ name }}</td>
+      <td style="text-align:right;padding:8px 14px;color:#333;font-weight:600;">{{ remain }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>"""
+        url = await self.html_render(tmpl, {"items": items})
+        yield event.image_result(url)
 
     @filter.command("帮助")
     async def help_cmd(self, event: AstrMessageEvent):
