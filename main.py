@@ -262,58 +262,96 @@ class LimitUsePlugin(Star):
 
     @filter.command("查看全部余额")
     async def view_all_quota(self, event: AstrMessageEvent):
-        """管理员查看所有用户的剩余次数"""
         user_id = event.get_sender_id()
         admin_list = self.config.get("admin_users", [])
         if user_id not in admin_list:
             yield event.plain_result("你没有权限使用此指令哦(｡•ᴗ•｡)")
             return
-
         quota = await self._get_quota()
         remarks = await self._get_remarks()
         default_quota = self.config["default_quota"]
-
         if not quota:
             yield event.plain_result("还没有用户数据呢～")
             return
-
         items = []
         for uid in sorted(quota.keys()):
             name = remarks.get(uid, "") or uid
             remain = quota.get(uid, default_quota)
             items.append((name, remain))
-
-        tmpl = """<div style="padding:20px 28px;font-family:'Microsoft YaHei','PingFang SC',sans-serif;background:#fff;border-radius:12px;">
+        # 尝试用 html_render
+        try:
+            tmpl = '''<div style="padding:20px 28px;font-family:sans-serif;background:#fff;">
   <table style="width:100%;border-collapse:collapse;font-size:15px;">
     <tr style="border-bottom:2px solid #6366f1;">
-      <th style="text-align:left;padding:10px 14px;color:#6366f1;font-size:16px;">用户</th>
-      <th style="text-align:right;padding:10px 14px;color:#6366f1;font-size:16px;">余额</th>
+      <th style="text-align:left;padding:10px 14px;color:#6366f1;">用户</th>
+      <th style="text-align:right;padding:10px 14px;color:#6366f1;">余额</th>
     </tr>
     {% for name, remain in items %}
-    <tr style="border-bottom:1px solid #e8e8e8;">
-      <td style="text-align:left;padding:8px 14px;color:#333;">{{ name }}</td>
-      <td style="text-align:right;padding:8px 14px;color:#333;font-weight:600;">{{ remain }}</td>
+    <tr style="border-bottom:1px solid #eee;">
+      <td style="text-align:left;padding:8px 14px;">{{ name }}</td>
+      <td style="text-align:right;padding:8px 14px;font-weight:600;">{{ remain }}</td>
     </tr>
     {% endfor %}
   </table>
-</div>"""
+</div>'''
+            p = await self.html_render(tmpl, {"items": items}, return_url=False)
+            yield event.image_result(str(p))
+            return
+        except Exception:
+            pass
+        # fallback: text_to_image
         try:
-            path = await self.html_render(tmpl, {"items": items}, return_url=False)
-            yield event.image_result(str(path))
-        except Exception as e:
-            logger.error(f"html_render 失败: {e}")
-            try:
-                text = "\n".join(f"{name}    {remain}" for name, remain in items)
-                path2 = await self.text_to_image(f"用户  余额
-
-{text}", return_url=False)
-                yield event.image_result(str(path2))
-            except Exception as e2:
-                logger.error(f"text_to_image 也失败: {e2}")
-                lines = [f"{name}：剩余{remain}" for name, remain in items]
-                yield event.plain_result("\n".join(lines))
-
-    @filter.command("帮助")
+            txt = "\n".join(f"{n}    {r}" for n, r in items)
+            p2 = await self.text_to_image(f"用户  余额\n\n{txt}", return_url=False)
+            yield event.image_result(str(p2))
+            return
+        except Exception:
+            pass
+        # fallback: Pillow
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+            import os
+            from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+            from pathlib import Path
+            fp = None
+            for fp_cand in ["/usr/share/fonts/truetype/wqy/wqy-microhei.ttc","/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc","/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf","/System/Library/Fonts/PingFang.ttc","C:/Windows/Fonts/msyh.ttc"]:
+                if os.path.exists(fp_cand):
+                    fp = fp_cand
+                    break
+            fs = 18
+            fnt = ImageFont.truetype(fp, fs) if fp else ImageFont.load_default()
+            fntb = ImageFont.truetype(fp, fs+2) if fp else fnt
+            rh, px, py2 = 36, 24, 16
+            cw = [200, 80]
+            n = len(items) + 2
+            w = sum(cw) + px * 3
+            h = py2 * 2 + n * rh + 4
+            img = Image.new("RGB", (w, h), "#ffffff")
+            dr = ImageDraw.Draw(img)
+            y = py2
+            dr.text((px, y), "用户", fill="#6366f1", font=fntb)
+            dr.text((px + cw[0], y), "余额", fill="#6366f1", font=fntb)
+            y += rh
+            dr.line([(px, y), (w-px, y)], fill="#6366f1", width=2)
+            y += 8
+            for name, remain in items:
+                dr.text((px, y), str(name), fill="#333", font=fnt)
+                rt = str(remain)
+                rw = dr.textlength(rt, font=fnt)
+                dr.text((px + cw[0] - rw, y), rt, fill="#333", font=fnt)
+                y += rh
+                if y < h - py2:
+                    dr.line([(px, y-4), (w-px, y-4)], fill="#eee", width=1)
+            sd = Path(get_astrbot_data_path()) / "plugin_data" / PLUGIN_NAME
+            sd.mkdir(parents=True, exist_ok=True)
+            sp = sd / "quota_overview.png"
+            img.save(str(sp))
+            yield event.image_result(str(sp))
+            return
+        except Exception:
+            lines = [f"{n}：剩余{r}" for n, r in items]
+            yield event.plain_result("\n".join(lines))
+@filter.command("帮助")
     async def help_cmd(self, event: AstrMessageEvent):
         msg = (
             "📋 **可用指令列表**\n\n"
