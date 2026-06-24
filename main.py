@@ -297,8 +297,17 @@ class LimitUsePlugin(Star):
     {% endfor %}
   </table>
 </div>"""
-        url = await self.html_render(tmpl, {"items": items})
-        yield event.image_result(url)
+        try:
+            url = await self.html_render(tmpl, {"items": items})
+            yield event.image_result(url)
+        except Exception as e:
+            logger.error(f"html_render 失败: {e}，回退到 text_to_image")
+            text = "
+".join(f"{name}    {remain}" for name, remain in items)
+            url2 = await self.text_to_image(f"用户  余额
+
+{text}")
+            yield event.image_result(url2)
 
     @filter.command("帮助")
     async def help_cmd(self, event: AstrMessageEvent):
