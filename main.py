@@ -263,8 +263,7 @@ class LimitUsePlugin(Star):
             remain = quota.get(uid, default_quota)
             lines.append(f"《{name}》：剩余{remain}")
 
-        result = "
-".join(lines)
+        result = "\n".join(lines)
         yield event.plain_result(result)
 
     @filter.command("帮助")
