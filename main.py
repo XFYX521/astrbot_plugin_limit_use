@@ -275,7 +275,8 @@ class LimitUsePlugin(Star):
             return
         lines = [f"{remarks.get(uid, uid)}：剩余{quota.get(uid, default_quota)}" for uid in sorted(quota.keys())]
         yield event.plain_result("\n".join(lines))
-@filter.command("帮助")
+
+    @filter.command("帮助")
     async def help_cmd(self, event: AstrMessageEvent):
         msg = (
             "📋 **可用指令列表**\n\n"
