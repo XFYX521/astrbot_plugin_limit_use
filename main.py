@@ -71,7 +71,7 @@ class LimitUsePlugin(Star):
                 "获取所有用户的次数/Tokens数据",
             )
             context.register_web_api(
-                f"/{PLUGIN_NAME}/update/<user_id>/<int:remaining>",
+                f"/{PLUGIN_NAME}/update/<user_id>/<remaining>",
                 self.api_update_user,
                 ["GET"],
                 "修改指定用户的剩余次数",
@@ -338,9 +338,9 @@ class LimitUsePlugin(Star):
             "total_tokens_sum": total_tokens_sum,
         }
 
-    async def api_update_user(self, user_id: str, remaining: int):
+    async def api_update_user(self, user_id: str, remaining: str):
         quota = await self._get_quota()
-        quota[user_id] = max(0, remaining)
+        quota[user_id] = max(0, int(remaining))
         await self._save_quota(quota)
 
         usage = await self._get_total_usage()
