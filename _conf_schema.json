@@ -26,7 +26,7 @@
   },
   "signin_weights": {
     "description": "方式二的权重配置 {值: 权重}",
-    "type": "dict",
+    "type": "object",
     "default": {},
     "hint": "如 {\"3\": 1, \"5\": 2, \"10\": 1} 表示获得3次概率1/4，5次概率2/4，10次概率1/4",
     "items": {}
