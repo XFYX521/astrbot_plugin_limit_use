@@ -235,15 +235,24 @@ class LimitUsePlugin(Star):
             yield event.plain_result("你今天已经签过到啦，明天再来吧(｡•ᴗ•｡)")
             return
 
-        bonus_min = self.config["daily_bonus_min"]
-        bonus_max = self.config["daily_bonus_max"]
-        bonus = random.randint(
-            min(bonus_min, bonus_max),
-            max(bonus_min, bonus_max),
-        )
+        mode = self.config.get("signin_mode", "range")
+        if mode == "weighted":
+            weights = self.config.get("signin_weights", {})
+            if weights:
+                vals, wgts = zip(*[(int(k), v) for k, v in weights.items()])
+                bonus = random.choices(vals, weights=wgts, k=1)[0]
+            else:
+                bonus = 0
+        else:
+            bonus_min = self.config["daily_bonus_min"]
+            bonus_max = self.config["daily_bonus_max"]
+            bonus = random.randint(
+                min(bonus_min, bonus_max),
+                max(bonus_min, bonus_max),
+            )
         quota = await self._get_quota()
         current = quota.get(user_id, self.config["default_quota"])
-        quota[user_id] = current + bonus
+        quota[user_id] = max(0, current + bonus)
         await self._save_quota(quota)
 
         signin_records[user_id] = today
