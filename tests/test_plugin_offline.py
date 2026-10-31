@@ -8,6 +8,7 @@ import copy
 import datetime
 import importlib
 import json
+import re
 import sys
 import types
 import unittest
@@ -332,6 +333,46 @@ class QuartFallbackTest(unittest.TestCase):
             sys.modules.pop("quart", None)
             sys.modules["astrbot.api.web"] = saved_web
             importlib.reload(main)
+
+
+class VersionRegistryTest(unittest.TestCase):
+    """versions.json 必须同时是合法的 AstrBot 插件源 JSON。"""
+
+    PLUGIN_ID = "XFYX521/astrbot_plugin_limit_use"
+
+    def setUp(self):
+        self.text = (ROOT / "versions.json").read_text(encoding="utf-8")
+        self.data = json.loads(self.text)
+
+    def test_root_has_meta_and_single_plugin_entry(self):
+        self.assertIsInstance(self.data, dict)
+        self.assertIn("$meta", self.data)
+        self.assertEqual(self.data["$meta"]["schema_version"], 1)
+        # AstrBot 会把除 $meta 外的每个 dict 值当成插件条目；数组会被前端展开成垃圾条目
+        entries = [
+            key
+            for key, value in self.data.items()
+            if key != "$meta" and isinstance(value, dict)
+        ]
+        self.assertEqual(entries, [self.PLUGIN_ID])
+        record = self.data[self.PLUGIN_ID]
+        for key in ("author", "name", "version", "repo", "desc"):
+            self.assertTrue(record.get(key), key)
+        self.assertEqual(record["name"], ROOT.name)
+        self.assertTrue(record["repo"].startswith("https://github.com/"))
+        metadata_version = re.search(
+            r"^version:\s*(\S+)", (ROOT / "metadata.yaml").read_text(encoding="utf-8"), re.M
+        ).group(1)
+        self.assertEqual(record["version"], metadata_version)
+        self.assertEqual(record["version"], self.data["$meta"]["releases"][0]["version"])
+
+    def test_release_history_lives_under_meta(self):
+        releases = self.data["$meta"]["releases"]
+        self.assertGreaterEqual(len(releases), 1)
+        for release in releases:
+            self.assertRegex(release["version"], r"^v\d+\.\d+\.\d+$")
+        # 根级不能出现数组值（前端 getPluginCollections 会遍历所有键）
+        self.assertEqual([k for k, v in self.data.items() if isinstance(v, list)], [])
 
 
 if __name__ == "__main__":

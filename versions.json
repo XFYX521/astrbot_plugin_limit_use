@@ -1,261 +1,265 @@
 {
-  "name": "astrbot_plugin_limit_use",
-  "author": "XFYX521",
-  "plugin_id": "XFYX521/astrbot_plugin_limit_use",
-  "repo": "https://github.com/XFYX521/astrbot_plugin_limit_use",
-  "display_name": "对话次数限制",
-  "desc": "给 QQ 用户设置对话次数额度，次数用完后需签到补充。",
-  "support_platforms": [
-    "aiocqhttp"
-  ],
-  "astrbot_version": ">=4.29.0,<5",
-  "latest": "v1.0.17",
-  "releases": [
-    {
-      "version": "v1.0.17",
-      "date": "2026-10-31",
-      "commit": "709d83c617c4ed81360edb0574449f4e8e4ddb6a",
-      "tag": "v1.0.17",
-      "zip_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v1.0.17.zip",
-      "changes": [
-        "🐛 修复 weighted 签到在默认配置下恒得 0 次：`signin_weights` 默认值此前是字面量 `\\n` 而非换行",
-        "🐛 weighted 权重配置非法时回落到 range 模式，不再静默返回 0",
-        "🐛 `api_update_user` 校验参数，非法值返回 400 而非 500",
-        "🔧 KV 读-改-写加 `asyncio.Lock`，避免并发消息丢次数/漏记 Token",
-        "🔧 页面目录 `pages/` 迁移到官方推荐的 `views/`，bridge 改用 `AstrBotPluginView`（兼容旧别名）",
-        "🔧 `metadata.yaml` 声明 `astrbot_version: \">=4.29.0,<5\"`（`views/` 需 AstrBot ≥ 4.29.0），README 标注最低版本",
-        "🔧 Web API 改用 `astrbot.api.web` 的 `request` / `json_response` / `error_response`",
-        "🔧 移除旧式 `@register`，版本号只由 `metadata.yaml` 提供",
-        "📝 修正 README 配置表/目录/License，补充 `/查看全部余额` 说明"
-      ],
-      "note": null
-    },
-    {
-      "version": "v1.0.16",
-      "date": "2026-06-30",
-      "commit": "2d6cdf561a6dd34f45b0b47689133c3875112368",
-      "tag": null,
-      "zip_url": null,
-      "changes": [
-        "✨ 新增签到方式二（weighted）：自定义值+权重概率",
-        "✨ 配置项 signin_mode 可选 range / weighted",
-        "🔧 负值签到结果最少为 0"
-      ],
-      "note": null
-    },
-    {
-      "version": "v1.0.15",
-      "date": "2026-06-24",
-      "commit": "b01e843c1e774edf6200515969b01f634b4d0299",
-      "tag": null,
-      "zip_url": null,
-      "changes": [
-        "✨ 新增 `/查看全部余额`（纯文本输出，格式：备注：剩余N；/帮助 不显示）"
-      ],
-      "note": null
-    },
-    {
-      "version": "v1.0.14",
-      "date": "2026-06-24",
-      "commit": "93076d879fcc78082e33a43bbf725811fa84bb9e",
-      "tag": null,
-      "zip_url": null,
-      "changes": [
-        "✨ WebUI 用户列表新增「今日调用」列"
-      ],
-      "note": null
-    },
-    {
-      "version": "v1.0.13",
-      "date": "2026-06-24",
-      "commit": "5b674071208e050b05b8d8728bee42440f1b4c74",
-      "tag": null,
-      "zip_url": null,
-      "changes": [
-        "✨ 新增管理指令 `/查看全部余额`（仅管理员可用，/帮助 不显示）",
-        "✨ 格式：《备注名》：剩余《余额》"
-      ],
-      "note": null
-    },
-    {
-      "version": "v1.0.12",
-      "date": "2026-06-23",
-      "commit": "83f16c24af0c170e963015546cb0d0e2adb6acee",
-      "tag": null,
-      "zip_url": null,
-      "changes": [
-        "✨ 签到奖励改为可配置的随机范围（daily_bonus_min / daily_bonus_max）",
-        "✨ 最小与最大相等时则为固定值"
-      ],
-      "note": null
-    },
-    {
-      "version": "v1.0.11",
-      "date": "2026-06-22",
-      "commit": "72132d053ad868ecfcadcac6dd414c0dfa256648",
-      "tag": null,
-      "zip_url": null,
-      "changes": [
-        "💄 Token 显示优化：≥1000 显示 K，≥1000000 显示 M（保留两位小数）",
-        "⏰ 新增定时任务：每天0点自动将前一日 Token 消耗归档到 KV 存储"
-      ],
-      "note": null
-    },
-    {
-      "version": "v1.0.10",
-      "date": "2026-06-22",
-      "commit": "b72644efce12a351f7a5369a5e2af4a055d83c3f",
-      "tag": null,
-      "zip_url": null,
-      "changes": [
-        "🐛 修复管理员不计入累积调用次数的问题"
-      ],
-      "note": null
-    },
-    {
-      "version": "v1.0.9",
-      "date": "2026-06-22",
-      "commit": "1ad44b86a33943e23dc332db9a446852e447022f",
-      "tag": null,
-      "zip_url": null,
-      "changes": [
-        "✨ 新增平均 Token 列（累积 Token ÷ 累积调用，以 k 为单位）",
-        "✨ 统计栏新增总体平均 Token"
-      ],
-      "note": null
-    },
-    {
-      "version": "v1.0.8",
-      "date": "2026-06-22",
-      "commit": "1e6556f7f0fba02f36fa1e0dc9b73986b29f6e2e",
-      "tag": null,
-      "zip_url": null,
-      "changes": [
-        "🐛 修复 Token 计量不准：明确取 prompt_tokens + completion_tokens（含缓存输入）",
-        "🔧 _extract_tokens 同时支持对象和字典格式的 usage"
-      ],
-      "note": null
-    },
-    {
-      "version": "v1.0.7",
-      "date": "2026-06-22",
-      "commit": "42df78e2942f8178b3b8992a41d12dfd4d895f1f",
-      "tag": null,
-      "zip_url": null,
-      "changes": [
-        "💄 简化 WebUI：去掉「总消耗/当日消耗」Tab 切换",
-        "💄 用户列表同时显示今日 Token 和累积 Token 两列"
-      ],
-      "note": null
-    },
-    {
-      "version": "v1.0.6",
-      "date": "2026-06-22",
-      "commit": "94bc1f8f3898a1c4c55e04ad3c030e1cb224a351",
-      "tag": null,
-      "zip_url": null,
-      "changes": [
-        "✨ 新增 Token 消耗统计",
-        "✨ WebUI 增加「总消耗 / 当日消耗」Tab 切换视图",
-        "✨ 顶部统计栏显示累积 Token 和今日 Token",
-        "🔧 新增 `on_llm_response` 钩子自动记录 Token"
-      ],
-      "note": null
-    },
-    {
-      "version": "v1.0.5",
-      "date": "2026-06-22",
-      "commit": "b8b95a1f254b82bc27dbc5cb25a26f0ccbfebeb3",
-      "tag": null,
-      "zip_url": null,
-      "changes": [
-        "🐛 修复中文备注显示为 URL 编码的问题（改用 query 参数传递）"
-      ],
-      "note": null
-    },
-    {
-      "version": "v1.0.4",
-      "date": "2026-06-22",
-      "commit": "e80a4260fe2a2a044abea15a836cdb51845c5d88",
-      "tag": null,
-      "zip_url": null,
-      "changes": [
-        "✨ WebUI 新增用户备注功能，点击 QQ 号旁的备注即可编辑",
-        "🔧 后端新增 `GET /remark/<uid>/<text>` API"
-      ],
-      "note": null
-    },
-    {
-      "version": "v1.0.3",
-      "date": "2026-06-21",
-      "commit": "ee22c1cffa47dc3eee9b1308fdc2a7e08ebeecc8",
-      "tag": null,
-      "zip_url": null,
-      "changes": [
-        "✨ 重新实现 WebUI 管理页面，显示用户列表 + 已调用/剩余次数",
-        "✨ 支持 +10 / +1 / -1 / -10 快捷修改剩余次数",
-        "🔧 后端 Web API 改用纯路由参数，不依赖 `astrbot.api.web`"
-      ],
-      "note": "该版本未单独提升 metadata.yaml 的 version（v1.0.4 提交才更新）"
-    },
-    {
-      "version": "v1.0.2",
-      "date": "2026-06-21",
-      "commit": "92810dd33ae675bc36e41717b5320f8703a60904",
-      "tag": null,
-      "zip_url": null,
-      "changes": [
-        "🐛 修复指令也被计入次数的问题（改用 `on_llm_request` 钩子）",
-        "🔧 只有真正调用 LLM 的对话才消耗次数",
-        "🔧 移除 `pages/` 目录，修复 WebUI \"未找到该路由\" 错误",
-        "🔧 重建静态 `pages/info/` 页面，无需后端 API"
-      ],
-      "note": null
-    },
-    {
-      "version": "v1.0.1",
-      "date": "2026-06-21",
-      "commit": "0c29ccbc5990702b6976015fa2052c4503abb62c",
-      "tag": null,
-      "zip_url": null,
-      "changes": [
-        "🐛 修复 `get_kv_data()` 缺少 `default` 参数导致的异常",
-        "🔧 移除 Web API / Pages 功能，兼容旧版 AstrBot",
-        "📝 完善 README 文档"
-      ],
-      "note": null
-    },
-    {
-      "version": "v1.0.0",
-      "date": "2026-06-21",
-      "commit": "181525f0930c790a79b892d886e9b7409be1c06a",
-      "tag": null,
-      "zip_url": null,
-      "changes": [
-        "🎉 初始版本",
-        "用户对话次数额度管理，每次对话 -1",
-        "次数用尽自动回复并阻止继续对话",
-        "`/签到` 每日获取次数",
-        "`/我的余额` 查询剩余次数",
-        "`/帮助` 显示指令列表",
-        "管理员白名单免次数限制"
-      ],
-      "note": null
-    }
-  ],
-  "market_record": {
-    "XFYX521/astrbot_plugin_limit_use": {
-      "author": "XFYX521",
-      "name": "astrbot_plugin_limit_use",
-      "version": "v1.0.17",
-      "repo": "https://github.com/XFYX521/astrbot_plugin_limit_use",
-      "desc": "给 QQ 用户设置对话次数额度，次数用完后需签到补充。",
-      "display_name": "对话次数限制",
-      "support_platforms": [
-        "aiocqhttp"
-      ],
-      "astrbot_version": ">=4.29.0,<5",
-      "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v1.0.17.zip"
-    }
+  "$meta": {
+    "schema_version": 1,
+    "name": "XFYX521 插件源",
+    "version": "2026-10-31T16:14:29+08:00",
+    "homepage": "https://github.com/XFYX521/astrbot_plugin_limit_use",
+    "repository": "https://github.com/XFYX521/astrbot_plugin_limit_use",
+    "description": "XFYX521 的 AstrBot 插件源，提供对话次数限制插件的更新检测",
+    "updated_at": "2026-10-31T00:00:00Z",
+    "releases": [
+      {
+        "version": "v1.0.17",
+        "date": "2026-10-31",
+        "commit": "709d83c617c4ed81360edb0574449f4e8e4ddb6a",
+        "tag": "v1.0.17",
+        "zip_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v1.0.17.zip",
+        "changes": [
+          "🐛 修复 weighted 签到在默认配置下恒得 0 次：`signin_weights` 默认值此前是字面量 `\\n` 而非换行",
+          "🐛 weighted 权重配置非法时回落到 range 模式，不再静默返回 0",
+          "🐛 `api_update_user` 校验参数，非法值返回 400 而非 500",
+          "🔧 KV 读-改-写加 `asyncio.Lock`，避免并发消息丢次数/漏记 Token",
+          "🔧 页面目录 `pages/` 迁移到官方推荐的 `views/`，bridge 改用 `AstrBotPluginView`（兼容旧别名）",
+          "🔧 `metadata.yaml` 声明 `astrbot_version: \">=4.29.0,<5\"`（`views/` 需 AstrBot ≥ 4.29.0），README 标注最低版本",
+          "🔧 Web API 改用 `astrbot.api.web` 的 `request` / `json_response` / `error_response`",
+          "🔧 移除旧式 `@register`，版本号只由 `metadata.yaml` 提供",
+          "📝 修正 README 配置表/目录/License，补充 `/查看全部余额` 说明"
+        ],
+        "note": null
+      },
+      {
+        "version": "v1.0.16",
+        "date": "2026-06-30",
+        "commit": "2d6cdf561a6dd34f45b0b47689133c3875112368",
+        "tag": null,
+        "zip_url": null,
+        "changes": [
+          "✨ 新增签到方式二（weighted）：自定义值+权重概率",
+          "✨ 配置项 signin_mode 可选 range / weighted",
+          "🔧 负值签到结果最少为 0"
+        ],
+        "note": null
+      },
+      {
+        "version": "v1.0.15",
+        "date": "2026-06-24",
+        "commit": "b01e843c1e774edf6200515969b01f634b4d0299",
+        "tag": null,
+        "zip_url": null,
+        "changes": [
+          "✨ 新增 `/查看全部余额`（纯文本输出，格式：备注：剩余N；/帮助 不显示）"
+        ],
+        "note": null
+      },
+      {
+        "version": "v1.0.14",
+        "date": "2026-06-24",
+        "commit": "93076d879fcc78082e33a43bbf725811fa84bb9e",
+        "tag": null,
+        "zip_url": null,
+        "changes": [
+          "✨ WebUI 用户列表新增「今日调用」列"
+        ],
+        "note": null
+      },
+      {
+        "version": "v1.0.13",
+        "date": "2026-06-24",
+        "commit": "5b674071208e050b05b8d8728bee42440f1b4c74",
+        "tag": null,
+        "zip_url": null,
+        "changes": [
+          "✨ 新增管理指令 `/查看全部余额`（仅管理员可用，/帮助 不显示）",
+          "✨ 格式：《备注名》：剩余《余额》"
+        ],
+        "note": null
+      },
+      {
+        "version": "v1.0.12",
+        "date": "2026-06-23",
+        "commit": "83f16c24af0c170e963015546cb0d0e2adb6acee",
+        "tag": null,
+        "zip_url": null,
+        "changes": [
+          "✨ 签到奖励改为可配置的随机范围（daily_bonus_min / daily_bonus_max）",
+          "✨ 最小与最大相等时则为固定值"
+        ],
+        "note": null
+      },
+      {
+        "version": "v1.0.11",
+        "date": "2026-06-22",
+        "commit": "72132d053ad868ecfcadcac6dd414c0dfa256648",
+        "tag": null,
+        "zip_url": null,
+        "changes": [
+          "💄 Token 显示优化：≥1000 显示 K，≥1000000 显示 M（保留两位小数）",
+          "⏰ 新增定时任务：每天0点自动将前一日 Token 消耗归档到 KV 存储"
+        ],
+        "note": null
+      },
+      {
+        "version": "v1.0.10",
+        "date": "2026-06-22",
+        "commit": "b72644efce12a351f7a5369a5e2af4a055d83c3f",
+        "tag": null,
+        "zip_url": null,
+        "changes": [
+          "🐛 修复管理员不计入累积调用次数的问题"
+        ],
+        "note": null
+      },
+      {
+        "version": "v1.0.9",
+        "date": "2026-06-22",
+        "commit": "1ad44b86a33943e23dc332db9a446852e447022f",
+        "tag": null,
+        "zip_url": null,
+        "changes": [
+          "✨ 新增平均 Token 列（累积 Token ÷ 累积调用，以 k 为单位）",
+          "✨ 统计栏新增总体平均 Token"
+        ],
+        "note": null
+      },
+      {
+        "version": "v1.0.8",
+        "date": "2026-06-22",
+        "commit": "1e6556f7f0fba02f36fa1e0dc9b73986b29f6e2e",
+        "tag": null,
+        "zip_url": null,
+        "changes": [
+          "🐛 修复 Token 计量不准：明确取 prompt_tokens + completion_tokens（含缓存输入）",
+          "🔧 _extract_tokens 同时支持对象和字典格式的 usage"
+        ],
+        "note": null
+      },
+      {
+        "version": "v1.0.7",
+        "date": "2026-06-22",
+        "commit": "42df78e2942f8178b3b8992a41d12dfd4d895f1f",
+        "tag": null,
+        "zip_url": null,
+        "changes": [
+          "💄 简化 WebUI：去掉「总消耗/当日消耗」Tab 切换",
+          "💄 用户列表同时显示今日 Token 和累积 Token 两列"
+        ],
+        "note": null
+      },
+      {
+        "version": "v1.0.6",
+        "date": "2026-06-22",
+        "commit": "94bc1f8f3898a1c4c55e04ad3c030e1cb224a351",
+        "tag": null,
+        "zip_url": null,
+        "changes": [
+          "✨ 新增 Token 消耗统计",
+          "✨ WebUI 增加「总消耗 / 当日消耗」Tab 切换视图",
+          "✨ 顶部统计栏显示累积 Token 和今日 Token",
+          "🔧 新增 `on_llm_response` 钩子自动记录 Token"
+        ],
+        "note": null
+      },
+      {
+        "version": "v1.0.5",
+        "date": "2026-06-22",
+        "commit": "b8b95a1f254b82bc27dbc5cb25a26f0ccbfebeb3",
+        "tag": null,
+        "zip_url": null,
+        "changes": [
+          "🐛 修复中文备注显示为 URL 编码的问题（改用 query 参数传递）"
+        ],
+        "note": null
+      },
+      {
+        "version": "v1.0.4",
+        "date": "2026-06-22",
+        "commit": "e80a4260fe2a2a044abea15a836cdb51845c5d88",
+        "tag": null,
+        "zip_url": null,
+        "changes": [
+          "✨ WebUI 新增用户备注功能，点击 QQ 号旁的备注即可编辑",
+          "🔧 后端新增 `GET /remark/<uid>/<text>` API"
+        ],
+        "note": null
+      },
+      {
+        "version": "v1.0.3",
+        "date": "2026-06-21",
+        "commit": "ee22c1cffa47dc3eee9b1308fdc2a7e08ebeecc8",
+        "tag": null,
+        "zip_url": null,
+        "changes": [
+          "✨ 重新实现 WebUI 管理页面，显示用户列表 + 已调用/剩余次数",
+          "✨ 支持 +10 / +1 / -1 / -10 快捷修改剩余次数",
+          "🔧 后端 Web API 改用纯路由参数，不依赖 `astrbot.api.web`"
+        ],
+        "note": "该版本未单独提升 metadata.yaml 的 version（v1.0.4 提交才更新）"
+      },
+      {
+        "version": "v1.0.2",
+        "date": "2026-06-21",
+        "commit": "92810dd33ae675bc36e41717b5320f8703a60904",
+        "tag": null,
+        "zip_url": null,
+        "changes": [
+          "🐛 修复指令也被计入次数的问题（改用 `on_llm_request` 钩子）",
+          "🔧 只有真正调用 LLM 的对话才消耗次数",
+          "🔧 移除 `pages/` 目录，修复 WebUI \"未找到该路由\" 错误",
+          "🔧 重建静态 `pages/info/` 页面，无需后端 API"
+        ],
+        "note": null
+      },
+      {
+        "version": "v1.0.1",
+        "date": "2026-06-21",
+        "commit": "0c29ccbc5990702b6976015fa2052c4503abb62c",
+        "tag": null,
+        "zip_url": null,
+        "changes": [
+          "🐛 修复 `get_kv_data()` 缺少 `default` 参数导致的异常",
+          "🔧 移除 Web API / Pages 功能，兼容旧版 AstrBot",
+          "📝 完善 README 文档"
+        ],
+        "note": null
+      },
+      {
+        "version": "v1.0.0",
+        "date": "2026-06-21",
+        "commit": "181525f0930c790a79b892d886e9b7409be1c06a",
+        "tag": null,
+        "zip_url": null,
+        "changes": [
+          "🎉 初始版本",
+          "用户对话次数额度管理，每次对话 -1",
+          "次数用尽自动回复并阻止继续对话",
+          "`/签到` 每日获取次数",
+          "`/我的余额` 查询剩余次数",
+          "`/帮助` 显示指令列表",
+          "管理员白名单免次数限制"
+        ],
+        "note": null
+      }
+    ]
+  },
+  "XFYX521/astrbot_plugin_limit_use": {
+    "author": "XFYX521",
+    "name": "astrbot_plugin_limit_use",
+    "version": "v1.0.17",
+    "repo": "https://github.com/XFYX521/astrbot_plugin_limit_use",
+    "desc": "给 QQ 用户设置对话次数额度，次数用完后需签到补充。",
+    "short_desc": "按用户限制对话次数，额度用完后签到补充。",
+    "tags": [
+      "对话次数",
+      "签到",
+      "额度"
+    ],
+    "category": "其他",
+    "display_name": "对话次数限制",
+    "support_platforms": [
+      "aiocqhttp"
+    ],
+    "astrbot_version": ">=4.29.0,<5",
+    "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v1.0.17.zip",
+    "updated_at": "2026-10-31T00:00:00Z"
   }
 }

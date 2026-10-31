@@ -77,8 +77,8 @@ astrbot_plugin_limit_use/
 ├── main.py              # 插件主逻辑
 ├── metadata.yaml        # 插件元数据（版本号的唯一来源）
 ├── _conf_schema.json    # 配置定义
-├── versions.json        # 机器可读版本列表（更新市场记录/脚本用）
-├── VERSIONS.md          # 人类可读版本列表与发版步骤
+├── versions.json        # 版本列表，同时可直接添加为 AstrBot 插件源（自动更新检测）
+├── VERSIONS.md          # 人类可读版本列表、插件源用法与发版步骤
 ├── views/
 │   └── info/
 │       └── index.html   # WebUI 用户管理视图
@@ -112,12 +112,17 @@ astrbot_plugin_limit_use/
 
 ## 版本与发布
 
-- 版本号唯一来源是 `metadata.yaml` 的 `version`；`versions.json` 与 `VERSIONS.md` 由
-  `python scripts/gen_versions.py` 从 `CHANGELOG.md` 和 git 历史生成，**不要手改**。
+- 版本号唯一来源是 `metadata.yaml` 的 `version`；`versions.json` 与 `VERSIONS.md`
+  由 `python scripts/gen_versions.py` 从 `CHANGELOG.md` 和 git 历史生成，**不要手改**。
+- 自动更新检测：在 WebUI「插件市场 → 插件源」添加
+  `https://raw.githubusercontent.com/XFYX521/astrbot_plugin_limit_use/master/versions.json`，
+  再以市场方式安装本插件（已从链接安装的用「更换插件源」绑定到该源）。AstrBot 只对
+  `install_method == "market"` 的安装显示「有新版本」，链接安装只会显示「强制重新安装」。
+  详见 [VERSIONS.md](VERSIONS.md)。
 - 发版流程：改 `metadata.yaml` 版本 + 在 `CHANGELOG.md` 顶部加条目 → 运行生成脚本 →
   提交 → `git tag -a vX.Y.Z -m "vX.Y.Z"` → 推送 `master` 与 tags。
-- 更新插件市场记录时，`version` 取 `metadata.yaml`，`repo` 填仓库地址，`download_url`
-  可选填 `versions.json` 中该版本的 `zip_url`（依赖已推送的同名 tag）。详见 [VERSIONS.md](VERSIONS.md)。
+- 若同时维护官方市场记录，`version` 取 `metadata.yaml`，`repo` 填仓库地址，`download_url`
+  用 `versions.json` 中该版本的 `zip_url`（依赖已推送的同名 tag）。
 
 ## 更新日志
 

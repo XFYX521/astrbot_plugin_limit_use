@@ -29,25 +29,48 @@
 
 完整变更见 [CHANGELOG.md](CHANGELOG.md)。
 
-## 市场记录（可直接使用）
+## 作为插件源使用（自动更新检测）
 
-按插件市场 JSON 规范（2026-06-27）生成的当前版本 `PluginRecord`，可直接合并进市场源根对象（根 key 即 `plugin_id`）：
+`versions.json` 同时是一个可直接添加的 AstrBot 插件源 JSON（`$meta` + 根键 `XFYX521/astrbot_plugin_limit_use`）。在 WebUI「插件市场 → 插件源」中添加：
+
+```text
+https://raw.githubusercontent.com/XFYX521/astrbot_plugin_limit_use/master/versions.json
+```
+
+添加时 AstrBot 会先请求该地址并读取 `$meta.name` 作为源名称。
+
+**只有 `install_method == "market"` 的安装才会显示「有新版本」**，这是 AstrBot 前端的固定门槛（`updates_enabled && install_source.install_method === "market"`）。从链接/文件安装的插件只会看到「强制重新安装」。因此：
+
+1. 首次安装：添加上述插件源后，直接从该源安装本插件；
+2. 已从链接安装：在插件详情中「更换插件源」（后端接口 `POST /api/plugin/plugins/<plugin_id>/source`）绑定到该源，绑定后刷新插件页即可。
+
+更新检测的版本比较规则（前端 `has_update`）：市场记录 `version` 与已装 `metadata.yaml` 的 `version` 都须以 `v?数字` 开头，去掉 `v` 前缀后按 `.` 分段比较数字；市场版本更高时才提示更新。本文件的当前版本与 `metadata.yaml` 由同一脚本生成，天然一致。
+
+## 插件市场记录（PluginRecord）
+
+按插件市场 JSON 规范（[2026-06-27](https://docs.astrbot.app/dev/plugin-market/2026-06-27.html)）生成的当前版本 `PluginRecord`，可直接作为市场源根对象中 `XFYX521/astrbot_plugin_limit_use` 键的值：
 
 ```json
 {
-  "XFYX521/astrbot_plugin_limit_use": {
-    "author": "XFYX521",
-    "name": "astrbot_plugin_limit_use",
-    "version": "v1.0.17",
-    "repo": "https://github.com/XFYX521/astrbot_plugin_limit_use",
-    "desc": "给 QQ 用户设置对话次数额度，次数用完后需签到补充。",
-    "display_name": "对话次数限制",
-    "support_platforms": [
-      "aiocqhttp"
-    ],
-    "astrbot_version": ">=4.29.0,<5",
-    "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v1.0.17.zip"
-  }
+  "author": "XFYX521",
+  "name": "astrbot_plugin_limit_use",
+  "version": "v1.0.17",
+  "repo": "https://github.com/XFYX521/astrbot_plugin_limit_use",
+  "desc": "给 QQ 用户设置对话次数额度，次数用完后需签到补充。",
+  "short_desc": "按用户限制对话次数，额度用完后签到补充。",
+  "tags": [
+    "对话次数",
+    "签到",
+    "额度"
+  ],
+  "category": "其他",
+  "display_name": "对话次数限制",
+  "support_platforms": [
+    "aiocqhttp"
+  ],
+  "astrbot_version": ">=4.29.0,<5",
+  "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v1.0.17.zip",
+  "updated_at": "2026-10-31T00:00:00Z"
 }
 ```
 
@@ -63,11 +86,10 @@
    git push origin master --tags
    ```
 
-5. 更新插件市场记录：`version` 与 `metadata.yaml` 一致、`repo` 填
-   `https://github.com/XFYX521/astrbot_plugin_limit_use`、可选 `download_url` 用 `versions.json` 里最新版的 `zip_url`。
+5. 若同时维护官方市场记录：`version` 与 `metadata.yaml` 一致、`repo` 填 `https://github.com/XFYX521/astrbot_plugin_limit_use`、`download_url` 用最新版的 `zip_url`（需 tag 已推送）。
 
 ## 说明
 
-- 市场规范（[2026-06-27](https://docs.astrbot.app/dev/plugin-market/2026-06-27.html)）的 `PluginRecord` 只有一个 `version` 字段，多版本历史由本文件与 `versions.json` 承载。
+- 市场规范里的 `PluginRecord` 只有一个 `version` 字段，多版本历史由 `versions.json` 的 `$meta.releases` 承载（AstrBot 会跳过整个 `$meta`，不会误当成插件条目）。
 - `zip_url` 只在对应 tag 已推送时生成；未打 tag 的历史版本留空。
 - `v1.0.3` 当时未单独修改 `metadata.yaml` 的 `version`（到 v1.0.4 提交才更新），其提交按提交信息定位，见 `scripts/gen_versions.py` 的 `VERSION_OVERRIDES`。
