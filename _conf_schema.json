@@ -73,28 +73,10 @@
     "hint": "行情按「日期+币种」确定性随机，同一天同一币种结果固定，无法刷"
   },
   "invest_fee_percent": {
-    "description": "每笔投资手续费（%）",
+    "description": "每笔投资手续费（%，0 表示免手续费）",
     "type": "float",
-    "default": 1,
-    "hint": "按投入次数收取，四舍五入到整数次"
-  },
-  "invest_leverage_options": {
-    "description": "可选杠杆（逗号分隔）",
-    "type": "text",
-    "default": "2,5",
-    "hint": "如 2,5 表示用户可写 2x 或 5x"
-  },
-  "invest_default_leverage": {
-    "description": "默认杠杆",
-    "type": "int",
-    "default": 2,
-    "hint": "用户未写杠杆时使用，需在可选杠杆列表中"
-  },
-  "invest_max_stake": {
-    "description": "单次最大投入次数（0 表示不限）",
-    "type": "int",
     "default": 0,
-    "hint": "限制单次投入上限；仍会校验不超过当前余额"
+    "hint": "按投入次数收取，四舍五入到整数次；设为 0 即无手续费"
   },
   "invest_history_limit": {
     "description": "保留的投资记录条数",

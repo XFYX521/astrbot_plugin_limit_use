@@ -21,7 +21,7 @@ except ImportError:  # 旧版没有该模块时退回 quart（保持插件可加
 
 PLUGIN_NAME = "astrbot_plugin_limit_use"
 PLUGIN_DISPLAY_NAME = "对话次数限制"
-PLUGIN_VERSION = "v1.0.20"
+PLUGIN_VERSION = "v2.0.0"
 
 # 投资币种默认值（配置解析失败时兜底），基准价只用于展示现价
 DEFAULT_ASSETS: list[tuple[str, float]] = [
@@ -30,19 +30,6 @@ DEFAULT_ASSETS: list[tuple[str, float]] = [
     ("水晶", 280.0),
     ("星琼", 160.0),
 ]
-
-_DIRECTION_MAP = {
-    "做多": "long",
-    "多": "long",
-    "买": "long",
-    "buy": "long",
-    "long": "long",
-    "做空": "short",
-    "空": "short",
-    "卖": "short",
-    "sell": "short",
-    "short": "short",
-}
 
 
 def _get_attr(obj, attr, default=0):
@@ -113,19 +100,22 @@ def _parse_invest_assets(raw) -> list[tuple[str, float]]:
     return assets
 
 
-def _parse_leverage_options(raw) -> list[int]:
-    """解析“2,5”形式的可选杠杆列表，去重并保持顺序。"""
-    options: list[int] = []
-    for token in str(raw or "").replace("，", ",").split(","):
-        value = _as_int(token.strip().lower().removesuffix("x"), -1)
-        if value > 0 and value not in options:
-            options.append(value)
-    return options
+def _parse_percent(raw) -> int | None:
+    """解析投资比例：1–100 的整数（允许带 %），非法返回 None。"""
+    text = str(raw or "").strip().replace("%", "").replace("％", "").strip()
+    value = _as_int(text, -1)
+    return value if 1 <= value <= 100 else None
 
 
-def _normalize_direction(raw) -> str | None:
-    """把“做多/做空/long/short”统一成 long/short，非法返回 None。"""
-    return _DIRECTION_MAP.get(str(raw or "").strip().lower())
+def _settle_invest(balance: int, percent: int, rate: float, fee_percent: float) -> dict:
+    """按“余额百分比”结算一次投资：投入 = 余额 × 百分比（向下取整，至少 1 次）。"""
+    if balance <= 0:
+        return {"stake": 0, "fee": 0, "pnl": 0, "after": 0}
+    stake = min(balance, max(1, balance * percent // 100))
+    fee = int(round(stake * max(0.0, fee_percent) / 100))
+    gross = int(round(stake * rate))
+    pnl = gross - fee
+    return {"stake": stake, "fee": fee, "pnl": pnl, "after": max(0, balance + pnl)}
 
 
 def _moving_rate(asset: str, day: str, volatility: float) -> float:
@@ -297,6 +287,12 @@ class LimitUsePlugin(Star):
                 ["GET"],
                 "获取投资记录",
             )
+            context.register_web_api(
+                f"/{PLUGIN_NAME}/market",
+                self.api_get_market,
+                ["GET"],
+                "获取今日行情",
+            )
             logger.info("LimitUsePlugin: Web API 已注册")
         except Exception as e:
             logger.warning(f"LimitUsePlugin: Web API 注册失败 ({e})，跳过")
@@ -407,15 +403,6 @@ class LimitUsePlugin(Star):
         assets = _parse_invest_assets(self.config.get("invest_assets", ""))
         return assets or list(DEFAULT_ASSETS)
 
-    def _leverage_options(self) -> list[int]:
-        options = _parse_leverage_options(self.config.get("invest_leverage_options", "2,5"))
-        return options or [2, 5]
-
-    def _default_leverage(self) -> int:
-        options = self._leverage_options()
-        value = _as_int(self.config.get("invest_default_leverage", options[0]), options[0])
-        return value if value in options else options[0]
-
     def _volatility(self) -> float:
         try:
             value = float(self.config.get("invest_volatility", 3))
@@ -425,21 +412,13 @@ class LimitUsePlugin(Star):
 
     def _fee_percent(self) -> float:
         try:
-            value = float(self.config.get("invest_fee_percent", 1))
+            value = float(self.config.get("invest_fee_percent", 0))
         except (TypeError, ValueError):
-            value = 1.0
+            value = 0.0
         return max(0.0, value)
 
     def _rate(self, asset: str, day: str) -> float:
         return _moving_rate(asset, day, self._volatility())
-
-    def _resolve_leverage(self, raw, options: list[int]) -> int | None:
-        """解析用户输入的杠杆；为空用默认值，非法返回 None。"""
-        text = str(raw or "").strip().lower().removesuffix("x").strip()
-        if not text:
-            return self._default_leverage()
-        value = _as_int(text, -1)
-        return value if value in options else None
 
     def _market_rows(self, day: str) -> list[list]:
         rows: list[list] = []
@@ -480,28 +459,43 @@ class LimitUsePlugin(Star):
 
         return event.plain_result(fallback_text)
 
+    async def _daily_status(self, user_id: str, today: str) -> str:
+        """返回今天的每日动作状态：signin / invest / ''（签到与投资共享每日一次）。"""
+        async with self._kv_lock:
+            signin = await self._get_signin()
+            invested = await self._get_invest_daily()
+        if signin.get(user_id) == today:
+            return "signin"
+        if invested.get(user_id) == today:
+            return "invest"
+        return ""
+
     async def _invest_brief_result(self, event, user_id: str, today: str):
         """/投资 不带参数：今日行情 + 余额与今日状态 + 用法。"""
         quota = await self._get_quota()
         balance = quota.get(user_id, self.config["default_quota"])
-        daily = await self._get_invest_daily()
-        invested = daily.get(user_id) == today
-        options = self._leverage_options()
-        lev_text = "、".join(f"{value}x" for value in options)
-        usage = f"用法：/投资 原石 做多 10 {options[0]}x　杠杆可选 {lev_text}"
+        status = await self._daily_status(user_id, today)
+        usage = "用法：/投资 原石 10（10 表示用当前余额的 10%，范围 1–100）"
+
+        if status == "invest":
+            status_text = "已投资（明天再来）"
+        elif status == "signin":
+            status_text = "今日已签到（签到与投资共享每日一次）"
+        else:
+            status_text = "未投资"
 
         sections = [
             {"type": "table", "headers": ["币种", "基准价", "今日涨跌", "现价"], "rows": self._market_rows(today)},
             {"type": "kv", "items": [
                 ("我的余额", f"{balance} 次"),
-                ("今日投资", "已投资（明天再来）" if invested else "未投资"),
+                ("今日状态", status_text),
             ]},
             {"type": "note", "text": usage},
         ]
         fallback_lines = [
             f"📈 今日行情 · {today}",
             *[f"{row[0]}：基准{row[1]}　涨跌{row[2][0]}　现价{row[3]}" for row in self._market_rows(today)],
-            f"我的余额：{balance} 次　今日投资：{'已投资' if invested else '未投资'}",
+            f"我的余额：{balance} 次　今日状态：{status_text}",
             usage,
             "模拟行情，仅供娱乐",
         ]
@@ -590,9 +584,11 @@ class LimitUsePlugin(Star):
 
         async with self._kv_lock:
             signin_records = await self._get_signin()
+            invested = await self._get_invest_daily()
             already = signin_records.get(user_id) == today
+            invested_today = invested.get(user_id) == today
             bonus = 0
-            if not already:
+            if not already and not invested_today:
                 bonus = self._roll_bonus()
                 quota = await self._get_quota()
                 current = quota.get(user_id, self.config["default_quota"])
@@ -602,6 +598,9 @@ class LimitUsePlugin(Star):
                 signin_records[user_id] = today
                 await self._save_signin(signin_records)
 
+        if invested_today:
+            yield event.plain_result("你今天已经投资过啦，签到和投资共享每日一次，明天再来吧～")
+            return
         if already:
             yield event.plain_result("你今天已经签过到啦，明天再来吧(｡•ᴗ•｡)")
             return
@@ -614,11 +613,11 @@ class LimitUsePlugin(Star):
         self,
         event: AstrMessageEvent,
         asset: str = "",
-        direction: str = "",
-        stake: str = "",
-        leverage: str = "",
+        arg1: str = "",
+        arg2: str = "",
+        arg3: str = "",
     ):
-        """模拟行情，用对话次数做多/做空（每日 1 次）"""
+        """模拟行情，用当前余额的百分比投资（每日 1 次）"""
         if not self.config.get("invest_enabled", True):
             yield event.plain_result("投资模式已关闭，请联系管理员开启哦～")
             return
@@ -637,48 +636,36 @@ class LimitUsePlugin(Star):
             yield event.plain_result(f"没有「{asset}」这个币种哦，可选：{'、'.join(names)}")
             return
 
-        side = _normalize_direction(direction)
-        if side is None:
-            yield event.plain_result("方向要写「做多」或「做空」（也支持 long/short）哦～")
-            return
-
-        stake_value = _as_int(stake, -1)
-        if stake_value <= 0:
-            yield event.plain_result("投入次数要是正整数哦，比如 /投资 原石 做多 10 5x")
-            return
-
-        max_stake = _as_int(self.config.get("invest_max_stake", 0), 0)
-        if max_stake > 0 and stake_value > max_stake:
-            yield event.plain_result(f"单次最多投入 {max_stake} 次哦～")
-            return
-
-        options = self._leverage_options()
-        lev = self._resolve_leverage(leverage, options)
-        if lev is None:
-            yield event.plain_result(f"杠杆只能选 {'、'.join(f'{o}x' for o in options)} 哦～")
+        # 静默兼容旧格式：从任意位置取第一个 1–100 的整数作为百分比
+        percent = None
+        for raw in (arg1, arg2, arg3):
+            value = _parse_percent(raw)
+            if value is not None:
+                percent = value
+                break
+        if percent is None:
+            yield event.plain_result("用法：/投资 原石 10（10 表示用余额的 10%，范围 1–100）")
             return
 
         base = dict(assets)[asset]
         nickname = getattr(event, "get_sender_name", lambda: user_id)()
-        reasons = {"already": False, "empty": False, "stake": False}
+        reasons = {"signin": False, "invest": False, "empty": False}
 
         async with self._kv_lock:
             quota = await self._get_quota()
             balance = quota.get(user_id, self.config["default_quota"])
+            signin_records = await self._get_signin()
             daily = await self._get_invest_daily()
-            if daily.get(user_id) == today:
-                reasons["already"] = True
+            if signin_records.get(user_id) == today:
+                reasons["signin"] = True
+            elif daily.get(user_id) == today:
+                reasons["invest"] = True
             elif balance <= 0:
                 reasons["empty"] = True
-            elif stake_value > balance:
-                reasons["stake"] = True
             else:
                 rate = self._rate(asset, today)
-                fee = int(round(stake_value * self._fee_percent() / 100))
-                change = 1 if side == "long" else -1
-                pnl = int(round(stake_value * lev * rate * change)) - fee
-                after = max(0, balance + pnl)
-                quota[user_id] = after
+                result = _settle_invest(balance, percent, rate, self._fee_percent())
+                quota[user_id] = result["after"]
                 await self._save_quota(quota)
                 daily[user_id] = today
                 await self._save_invest_daily(daily)
@@ -689,15 +676,14 @@ class LimitUsePlugin(Star):
                     "user_id": user_id,
                     "nickname": nickname,
                     "asset": asset,
-                    "direction": "做多" if side == "long" else "做空",
-                    "leverage": lev,
-                    "stake": stake_value,
+                    "percent": percent,
+                    "stake": result["stake"],
                     "rate": rate,
                     "price": round(base * (1 + rate), 2),
-                    "fee": fee,
-                    "pnl": pnl,
+                    "fee": result["fee"],
+                    "pnl": result["pnl"],
                     "balance_before": balance,
-                    "balance_after": after,
+                    "balance_after": result["after"],
                 }
                 history = await self._get_invest_history()
                 history.append(entry)
@@ -706,27 +692,28 @@ class LimitUsePlugin(Star):
                     history = history[-limit:]
                 await self._save_invest_history(history)
 
-        if reasons["already"]:
+        if reasons["signin"]:
+            yield event.plain_result("你今天已经签过到啦，签到和投资共享每日一次，明天再来吧～")
+            return
+        if reasons["invest"]:
             yield event.plain_result("你今天已经投资过啦，明天再来吧(｡•ᴗ•｡)")
             return
         if reasons["empty"]:
             yield event.plain_result("你的余额是 0 次啦，先 /签到 再来投资吧～")
             return
-        if reasons["stake"]:
-            yield event.plain_result(f"投入不能超过当前余额（{balance} 次）哦～")
-            return
 
-        percent = rate * 100
-        direction_text = "做多" if side == "long" else "做空"
+        stake, fee, pnl, after = result["stake"], result["fee"], result["pnl"], result["after"]
+        change = rate * 100
+        items = [
+            ("玩家", nickname),
+            ("投入比例", f"{percent}%（{stake} 次）"),
+            ("今日行情", f"{asset} {'+' if change >= 0 else ''}{change:.2f}%"),
+            ("现价", f"{base * (1 + rate):.2f}（基准 {base:g}）"),
+        ]
+        if fee > 0:
+            items.append(("手续费", f"{fee} 次"))
         sections = [
-            {"type": "kv", "items": [
-                ("玩家", nickname),
-                ("方向", f"{direction_text} · {lev}x"),
-                ("投入", f"{stake_value} 次"),
-                ("今日行情", f"{asset} {'+' if percent >= 0 else ''}{percent:.2f}%"),
-                ("现价", f"{base * (1 + rate):.2f}（基准 {base:g}）"),
-                ("手续费", f"{fee} 次"),
-            ]},
+            {"type": "kv", "items": items},
             {"type": "kv", "items": [
                 ("盈亏", f"{pnl:+d} 次", "pos" if pnl >= 0 else "neg"),
                 ("余额", f"{balance} → {after} 次"),
@@ -734,15 +721,15 @@ class LimitUsePlugin(Star):
         ]
         fallback = "\n".join([
             f"📈 {asset} 投资结算",
-            f"{nickname}：{direction_text} {stake_value} 次 × {lev}x",
-            f"行情 {percent:+.2f}%　盈亏 {pnl:+d} 次　手续费 {fee} 次",
+            f"{nickname}：{percent}% → 投入 {stake} 次",
+            f"行情 {change:+.2f}%　盈亏 {pnl:+d} 次" + (f"　手续费 {fee} 次" if fee else ""),
             f"余额：{balance} → {after}",
             "模拟行情，仅供娱乐",
         ])
         yield await self._card_result(
             event,
             f"📈 {asset} 投资结算",
-            f"{direction_text} · {lev}x",
+            f"{percent}% · 投入 {stake} 次",
             sections,
             "模拟行情，仅供娱乐",
             fallback,
@@ -779,18 +766,18 @@ class LimitUsePlugin(Star):
                 ("/帮助", "显示本菜单"),
                 ("/签到", "每日签到获取对话次数"),
                 ("/我的余额", "查看剩余对话次数"),
-                ("/投资", "模拟行情投资对话次数（每日 1 次）"),
+                ("/投资", "用余额百分比投资（每日 1 次，与签到共享）"),
             ]},
-            {"type": "note", "text": "投资用法：/投资 原石 做多 10 5x（方向支持 做多/做空、long/short）"},
-            {"type": "note", "text": "次数用完后会被拦截；签到或投资都可以补充次数。"},
+            {"type": "note", "text": "投资用法：/投资 原石 10（10 表示用当前余额的 10%，范围 1–100）"},
+            {"type": "note", "text": "次数用完后会被拦截；签到或投资每天只能选一个。"},
         ]
         fallback = "\n".join([
             f"📋 {PLUGIN_DISPLAY_NAME} {PLUGIN_VERSION} 可用指令",
             "├ /帮助 — 显示本菜单",
             "├ /签到 — 每日签到获取对话次数",
             "├ /我的余额 — 查看剩余对话次数",
-            "└ /投资 — 模拟行情投资对话次数（每日 1 次）",
-            "投资用法：/投资 原石 做多 10 5x",
+            "└ /投资 — 用余额百分比投资（与签到共享每日 1 次）",
+            "投资用法：/投资 原石 10（10% ，范围 1–100）",
         ])
         yield await self._card_result(
             event,
@@ -899,6 +886,26 @@ class LimitUsePlugin(Star):
         async with self._kv_lock:
             history = await self._get_invest_history()
         return json_response({"investments": list(reversed(history))})
+
+    async def api_get_market(self):
+        """返回今日行情与投资参数（供 WebUI 行情页使用）"""
+        today = datetime.date.today().isoformat()
+        assets = []
+        for name, base in self._assets():
+            rate = self._rate(name, today)
+            assets.append({
+                "name": name,
+                "base": base,
+                "rate": rate,
+                "change_percent": round(rate * 100, 2),
+                "price": round(base * (1 + rate), 2),
+            })
+        return json_response({
+            "date": today,
+            "assets": assets,
+            "volatility": self._volatility(),
+            "fee_percent": self._fee_percent(),
+        })
 
     # ══════════════════════════════════════════════
     #  定时任务 —— 每天0点写入 Token 日报日志

@@ -329,6 +329,30 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["users"][0]["remaining"], 2)
 
 
+class MarketApiTest(unittest.IsolatedAsyncioTestCase):
+    async def test_market_payload_is_deterministic(self):
+        plugin = make_plugin()
+        data = await plugin.api_get_market()
+        today = datetime.date.today().isoformat()
+
+        self.assertEqual(data["date"], today)
+        self.assertEqual(len(data["assets"]), 4)
+        self.assertEqual({a["name"] for a in data["assets"]}, {"原石", "菲林", "水晶", "星琼"})
+        self.assertEqual(data["fee_percent"], 0)
+
+        first = data["assets"][0]
+        self.assertAlmostEqual(first["rate"], main._moving_rate(first["name"], today, 3.0), places=6)
+        self.assertAlmostEqual(first["price"], round(first["base"] * (1 + first["rate"]), 2), places=2)
+        # 再取一次必须完全一致（同一天不可刷）
+        again = await plugin.api_get_market()
+        self.assertEqual([a["rate"] for a in data["assets"]], [a["rate"] for a in again["assets"]])
+
+    async def test_market_reports_configured_fee(self):
+        plugin = make_plugin(invest_fee_percent=0.5)
+        data = await plugin.api_get_market()
+        self.assertEqual(data["fee_percent"], 0.5)
+
+
 class QuartFallbackTest(unittest.TestCase):
     """旧版 AstrBot 没有 astrbot.api.web 时，应退回 quart 实现且不报错。"""
 
@@ -407,10 +431,48 @@ class InvestAssetsTest(unittest.TestCase):
         plugin = make_plugin(invest_assets="完全不是配置")
         self.assertEqual([name for name, _ in plugin._assets()], ["原石", "菲林", "水晶", "星琼"])
 
-    def test_leverage_options(self):
-        self.assertEqual(main._parse_leverage_options("2, 5x，10"), [2, 5, 10])
-        self.assertEqual(main._parse_leverage_options("bad"), [])
-        self.assertEqual(make_plugin(invest_leverage_options="bad")._leverage_options(), [2, 5])
+
+class PercentParseTest(unittest.TestCase):
+    def test_valid_percent(self):
+        self.assertEqual(main._parse_percent("10"), 10)
+        self.assertEqual(main._parse_percent("1"), 1)
+        self.assertEqual(main._parse_percent("100"), 100)
+        self.assertEqual(main._parse_percent(" 25% "), 25)
+
+    def test_invalid_percent(self):
+        for raw in ("0", "101", "-5", "abc", "", "10.5"):
+            self.assertIsNone(main._parse_percent(raw), raw)
+
+
+class SettleInvestTest(unittest.TestCase):
+    def test_stake_is_floor_of_balance_percent(self):
+        result = main._settle_invest(1234, 10, 0.02, 0)
+        self.assertEqual(result["stake"], 123)
+        self.assertEqual(result["pnl"], 2)  # round(123 × 2%)
+        self.assertEqual(result["after"], 1236)
+
+    def test_stake_at_least_one(self):
+        self.assertEqual(main._settle_invest(3, 1, 0.02, 0)["stake"], 1)
+
+    def test_stake_never_exceeds_balance(self):
+        self.assertEqual(main._settle_invest(7, 100, 0.02, 0)["stake"], 7)
+
+    def test_fee_rounds_to_int(self):
+        result = main._settle_invest(2000, 10, 0.02, 1)
+        self.assertEqual(result["stake"], 200)
+        self.assertEqual(result["fee"], 2)
+        self.assertEqual(result["pnl"], 2)  # round(200 × 2%) − 2
+        self.assertEqual(result["after"], 2002)
+
+    def test_loss_is_clamped_to_zero(self):
+        result = main._settle_invest(20, 100, -1.5, 0)
+        self.assertEqual(result["pnl"], -30)
+        self.assertEqual(result["after"], 0)
+
+    def test_zero_balance(self):
+        self.assertEqual(main._settle_invest(0, 50, 0.02, 0), {
+            "stake": 0, "fee": 0, "pnl": 0, "after": 0,
+        })
 
 
 class MovingRateTest(unittest.TestCase):
@@ -437,82 +499,96 @@ class InvestCommandTest(unittest.IsolatedAsyncioTestCase):
         self._rate_patch.start()
         self.addCleanup(self._rate_patch.stop)
 
-    async def test_long_profit_and_fee(self):
+    async def test_percent_of_balance_no_fee_by_default(self):
         plugin = make_plugin()
-        await plugin.put_kv_data("user_quota", {"10001": 100})
-        event = FakeEvent()
-        replies = await collect(plugin.invest(event, "原石", "做多", "100", "5x"))
+        await plugin.put_kv_data("user_quota", {"10001": 1000})
+        replies = await collect(plugin.invest(FakeEvent(), "原石", "10"))
 
-        # 100 次 × 5x × 2% = 10 次毛利；手续费 100×1% = 1 次
+        # 投入 = 1000 × 10% = 100 次；行情 +2% → +2 次；默认免手续费
         self.assertEqual(len(replies), 1)
-        self.assertIn("+9", replies[0][1])  # 无文转图环境回落纯文本
-        quota = await plugin._get_quota()
-        self.assertEqual(quota["10001"], 109)
+        self.assertIn("+2", replies[0][1])
+        self.assertEqual((await plugin._get_quota())["10001"], 1002)
         history = await plugin._get_invest_history()
-        self.assertEqual(history[-1]["pnl"], 9)
-        self.assertEqual(history[-1]["fee"], 1)
-        self.assertEqual(history[-1]["direction"], "做多")
+        self.assertEqual(history[-1]["percent"], 10)
+        self.assertEqual(history[-1]["stake"], 100)
+        self.assertEqual(history[-1]["fee"], 0)
+        self.assertEqual(history[-1]["pnl"], 2)
         daily = await plugin._get_invest_daily()
         self.assertEqual(daily["10001"], datetime.date.today().isoformat())
 
-    async def test_short_default_leverage(self):
-        plugin = make_plugin()
-        await plugin.put_kv_data("user_quota", {"10001": 100})
-        event = FakeEvent()
-        await collect(plugin.invest(event, "菲林", "short", "100"))
+    async def test_fee_applies_when_configured(self):
+        plugin = make_plugin(invest_fee_percent=1)
+        await plugin.put_kv_data("user_quota", {"10001": 1000})
+        await collect(plugin.invest(FakeEvent(), "原石", "10"))
 
-        # 做空时行情 +2% 记为 -2%：100×2x×(-2%) = -4 次，手续费 1 次
-        quota = await plugin._get_quota()
-        self.assertEqual(quota["10001"], 95)
+        # 投入 100，毛利 +2，手续费 100×1% = 1 → 净 +1
+        self.assertEqual((await plugin._get_quota())["10001"], 1001)
         history = await plugin._get_invest_history()
-        self.assertEqual(history[-1]["leverage"], 2)
-        self.assertEqual(history[-1]["direction"], "做空")
+        self.assertEqual(history[-1]["fee"], 1)
+        self.assertEqual(history[-1]["pnl"], 1)
 
     async def test_loss_is_clamped_to_zero(self):
-        self._rate_mock.return_value = -0.5
+        self._rate_mock.return_value = -1.5
         plugin = make_plugin()
         await plugin.put_kv_data("user_quota", {"10001": 20})
-        event = FakeEvent()
-        await collect(plugin.invest(event, "原石", "做多", "20", "5x"))
+        await collect(plugin.invest(FakeEvent(), "原石", "100"))
 
-        # 20×5×(-50%) = -50 次，手续费 0 次：余额最多亏到 0
-        quota = await plugin._get_quota()
-        self.assertEqual(quota["10001"], 0)
+        self.assertEqual((await plugin._get_quota())["10001"], 0)
         history = await plugin._get_invest_history()
-        self.assertEqual(history[-1]["pnl"], -50)
         self.assertEqual(history[-1]["balance_after"], 0)
 
-    async def test_daily_limit_and_insufficient_balance(self):
+    async def test_old_format_is_tolerated(self):
         plugin = make_plugin()
-        await plugin.put_kv_data("user_quota", {"10001": 100})
-        first = await collect(plugin.invest(FakeEvent(), "原石", "做多", "10"))
-        self.assertEqual(len(first), 1)
+        await plugin.put_kv_data("user_quota", {"10001": 1000})
+        await collect(plugin.invest(FakeEvent(), "原石", "做多", "10", "5x"))
+        history = await plugin._get_invest_history()
+        self.assertEqual(history[-1]["percent"], 10)
+        self.assertEqual(history[-1]["stake"], 100)
 
-        second = await collect(plugin.invest(FakeEvent(), "原石", "做多", "10"))
+    async def test_daily_limit(self):
+        plugin = make_plugin()
+        await plugin.put_kv_data("user_quota", {"10001": 1000})
+        self.assertEqual(len(await collect(plugin.invest(FakeEvent(), "原石", "10"))), 1)
+
+        second = await collect(plugin.invest(FakeEvent(), "原石", "10"))
         self.assertIn("已经投资过", second[0][1])
         self.assertEqual(len(await plugin._get_invest_history()), 1)
 
+    async def test_signin_and_invest_share_one_daily_action(self):
+        # 先投资 → 签到被拒
+        plugin = make_plugin()
+        await plugin.put_kv_data("user_quota", {"10001": 1000})
+        await collect(plugin.invest(FakeEvent(), "原石", "10"))
+        signin = await collect(plugin.signin(FakeEvent()))
+        self.assertIn("共享每日一次", signin[0][1])
+
+        # 先签到 → 投资被拒
         plugin2 = make_plugin()
-        await plugin2.put_kv_data("user_quota", {"10001": 5})
-        too_much = await collect(plugin2.invest(FakeEvent(), "原石", "做多", "10"))
-        self.assertIn("不能超过当前余额", too_much[0][1])
+        await plugin2.put_kv_data("user_quota", {"10001": 1000})
+        await collect(plugin2.signin(FakeEvent()))
+        invest = await collect(plugin2.invest(FakeEvent(), "原石", "10"))
+        self.assertIn("共享每日一次", invest[0][1])
         self.assertEqual(await plugin2._get_invest_history(), [])
+
+    async def test_zero_balance(self):
+        plugin = make_plugin()
+        await plugin.put_kv_data("user_quota", {"10001": 0})
+        replies = await collect(plugin.invest(FakeEvent(), "原石", "10"))
+        self.assertIn("余额是 0", replies[0][1])
 
     async def test_disabled_and_bad_params(self):
         plugin = make_plugin(invest_enabled=False)
-        disabled = await collect(plugin.invest(FakeEvent(), "原石", "做多", "10"))
+        disabled = await collect(plugin.invest(FakeEvent(), "原石", "10"))
         self.assertIn("已关闭", disabled[0][1])
 
         plugin = make_plugin()
         await plugin.put_kv_data("user_quota", {"10001": 100})
-        bad_asset = await collect(plugin.invest(FakeEvent(), "钻石", "做多", "10"))
+        bad_asset = await collect(plugin.invest(FakeEvent(), "钻石", "10"))
         self.assertIn("没有「钻石」", bad_asset[0][1])
-        bad_dir = await collect(plugin.invest(FakeEvent(), "原石", "乱写", "10"))
-        self.assertIn("做多", bad_dir[0][1])
-        bad_lev = await collect(plugin.invest(FakeEvent(), "原石", "做多", "10", "9x"))
-        self.assertIn("杠杆", bad_lev[0][1])
-        bad_stake = await collect(plugin.invest(FakeEvent(), "原石", "做多", "0"))
-        self.assertIn("正整数", bad_stake[0][1])
+        for bad in ("0", "101", "abc"):
+            replies = await collect(plugin.invest(FakeEvent(), "原石", bad))
+            self.assertIn("范围 1–100", replies[0][1], bad)
+        self.assertEqual(await plugin._get_invest_history(), [])
 
 
 class CardFallbackTest(unittest.IsolatedAsyncioTestCase):
