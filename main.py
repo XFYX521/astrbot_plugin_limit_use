@@ -9,9 +9,9 @@ from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star
 
 try:  # 新版 AstrBot 官方 Web API
-    from astrbot.api.web import error_response, json_response, request
+    from astrbot.api.web import error_response, json_response
 except ImportError:  # 旧版没有该模块时退回 quart（保持插件可加载）
-    from quart import jsonify, request
+    from quart import jsonify
 
     def json_response(data):
         return jsonify(data)
@@ -21,7 +21,7 @@ except ImportError:  # 旧版没有该模块时退回 quart（保持插件可加
 
 PLUGIN_NAME = "astrbot_plugin_limit_use"
 PLUGIN_DISPLAY_NAME = "对话次数限制"
-PLUGIN_VERSION = "v2.0.1"
+PLUGIN_VERSION = "v2.1.0"
 
 # 投资币种默认值（配置解析失败时兜底），基准价只用于展示现价
 DEFAULT_ASSETS: list[tuple[str, float]] = [
@@ -276,12 +276,6 @@ class LimitUsePlugin(Star):
                 "修改指定用户的剩余次数",
             )
             context.register_web_api(
-                f"/{PLUGIN_NAME}/remark/<user_id>",
-                self.api_set_remark,
-                ["GET"],
-                "设置用户备注",
-            )
-            context.register_web_api(
                 f"/{PLUGIN_NAME}/investments",
                 self.api_get_investments,
                 ["GET"],
@@ -326,11 +320,12 @@ class LimitUsePlugin(Star):
     async def _save_total_usage(self, data: dict):
         await self.put_kv_data("user_total_usage", data)
 
-    async def _get_remarks(self) -> dict:
-        return await self.get_kv_data("user_remarks", {}) or {}
+    async def _get_profiles(self) -> dict:
+        """{uid: {"name": 最近昵称, "last": iso时间, "private": {name,last}, "groups": {gid: {name,last}}}}"""
+        return await self.get_kv_data("user_profiles", {}) or {}
 
-    async def _save_remarks(self, data: dict):
-        await self.put_kv_data("user_remarks", data)
+    async def _save_profiles(self, data: dict):
+        await self.put_kv_data("user_profiles", data)
 
     async def _get_total_tokens(self) -> dict:
         """{uid: total_tokens}"""
@@ -395,6 +390,51 @@ class LimitUsePlugin(Star):
         usage[user_id] = usage.get(user_id, 0) + 1
         await self._save_total_usage(usage)
         await self._record_daily_usage(user_id)
+
+    def _chat_identity(self, event: AstrMessageEvent) -> tuple[str, str, str]:
+        """返回 (用户ID, 最近昵称, 群号)。私聊时群号为空字符串。"""
+        user_id = event.get_sender_id()
+        try:
+            nickname = (event.get_sender_name() or "").strip()
+        except Exception:
+            nickname = ""
+        group_id = ""
+        try:
+            group_id = str(event.get_group_id() or "")
+        except Exception:
+            group_id = ""
+        return user_id, nickname, group_id
+
+    async def _touch_profile(self, event: AstrMessageEvent):
+        """记录用户最近昵称与所在聊天窗口（群/私聊）。调用方需持有 self._kv_lock。"""
+        user_id, nickname, group_id = self._chat_identity(event)
+        if not user_id:
+            return
+
+        now = datetime.datetime.now().isoformat(timespec="seconds")
+        profiles = await self._get_profiles()
+        profile = profiles.get(user_id) or {}
+        if nickname:
+            profile["name"] = nickname
+        profile["last"] = now
+
+        if group_id:
+            groups = profile.get("groups") or {}
+            group = groups.get(group_id) or {}
+            if nickname:
+                group["name"] = nickname
+            group["last"] = now
+            groups[group_id] = group
+            profile["groups"] = groups
+        else:
+            private = profile.get("private") or {}
+            if nickname:
+                private["name"] = nickname
+            private["last"] = now
+            profile["private"] = private
+
+        profiles[user_id] = profile
+        await self._save_profiles(profiles)
 
     # ── 投资模式工具 ──
 
@@ -517,12 +557,14 @@ class LimitUsePlugin(Star):
         user_id = event.get_sender_id()
 
         if self._is_admin(user_id):
-            # 管理员不扣次数，但仍记录累积调用
+            # 管理员不扣次数，但仍记录累积调用与最近昵称/聊天窗口
             async with self._kv_lock:
+                await self._touch_profile(event)
                 await self._bump_usage(user_id)
             return
 
         async with self._kv_lock:
+            await self._touch_profile(event)
             quota = await self._get_quota()
             remain = quota.get(user_id, self.config["default_quota"])
             allowed = remain > 0
@@ -583,6 +625,7 @@ class LimitUsePlugin(Star):
         today = datetime.date.today().isoformat()
 
         async with self._kv_lock:
+            await self._touch_profile(event)
             signin_records = await self._get_signin()
             invested = await self._get_invest_daily()
             already = signin_records.get(user_id) == today
@@ -629,10 +672,14 @@ class LimitUsePlugin(Star):
         asset = str(asset or "").strip()
 
         if not asset:
+            async with self._kv_lock:
+                await self._touch_profile(event)
             yield await self._invest_brief_result(event, user_id, today)
             return
 
         if asset not in names:
+            async with self._kv_lock:
+                await self._touch_profile(event)
             yield event.plain_result(f"没有「{asset}」这个币种哦，可选：{'、'.join(names)}")
             return
 
@@ -652,6 +699,7 @@ class LimitUsePlugin(Star):
         reasons = {"signin": False, "invest": False, "empty": False}
 
         async with self._kv_lock:
+            await self._touch_profile(event)
             quota = await self._get_quota()
             balance = quota.get(user_id, self.config["default_quota"])
             signin_records = await self._get_signin()
@@ -738,7 +786,9 @@ class LimitUsePlugin(Star):
     @filter.command("我的余额")
     async def query_quota(self, event: AstrMessageEvent):
         user_id = event.get_sender_id()
-        quota = await self._get_quota()
+        async with self._kv_lock:
+            await self._touch_profile(event)
+            quota = await self._get_quota()
         remain = quota.get(user_id, self.config["default_quota"])
         reply = self.config["quota_query_reply"].replace("{quota}", str(remain))
         yield event.plain_result(reply)
@@ -749,13 +799,17 @@ class LimitUsePlugin(Star):
         if not self._is_admin(user_id):
             yield event.plain_result("你没有权限使用此指令哦(｡•ᴗ•｡)")
             return
-        quota = await self._get_quota()
-        remarks = await self._get_remarks()
+        async with self._kv_lock:
+            quota = await self._get_quota()
+            profiles = await self._get_profiles()
         default_quota = self.config["default_quota"]
         if not quota:
             yield event.plain_result("还没有用户数据呢～")
             return
-        lines = [f"{remarks.get(uid, uid)}：剩余{quota.get(uid, default_quota)}" for uid in sorted(quota.keys())]
+        lines = []
+        for uid in sorted(quota.keys()):
+            name = (profiles.get(uid) or {}).get("name") or uid
+            lines.append(f"{name}（{uid}）：剩余{quota.get(uid, default_quota)}")
         yield event.plain_result("\n".join(lines))
 
     @filter.command("帮助")
@@ -800,14 +854,14 @@ class LimitUsePlugin(Star):
             quota = await self._get_quota()
             usage = await self._get_total_usage()
             signin = await self._get_signin()
-            remarks = await self._get_remarks()
+            profiles = await self._get_profiles()
             total_tokens = await self._get_total_tokens()
             daily_tokens = await self._get_daily_tokens()
             daily_usage = await self._get_daily_usage()
 
         all_uids = (
             set(quota.keys()) | set(usage.keys()) | set(signin.keys())
-            | set(remarks.keys()) | set(total_tokens.keys()) | set(daily_tokens.keys())
+            | set(profiles.keys()) | set(total_tokens.keys()) | set(daily_tokens.keys())
             | set(daily_usage.keys())
         )
         if not all_uids:
@@ -824,9 +878,17 @@ class LimitUsePlugin(Star):
             total_used = usage.get(uid, 0)
             total_tok = total_tokens.get(uid, 0)
             avg_k = round(total_tok / total_used / 1000, 1) if total_used > 0 else 0
+            profile = profiles.get(uid) or {}
+            groups = [
+                {"group_id": gid, "name": (info or {}).get("name", ""), "last": (info or {}).get("last", "")}
+                for gid, info in (profile.get("groups") or {}).items()
+            ]
+            groups.sort(key=lambda item: item["last"], reverse=True)
+            private = profile.get("private") or {}
             users.append({
                 "user_id": uid,
-                "remark": remarks.get(uid, ""),
+                "name": profile.get("name", ""),
+                "is_admin": self._is_admin(uid),
                 "remaining": quota.get(uid, self.config["default_quota"]),
                 "total_used": total_used,
                 "last_signin": signin.get(uid, ""),
@@ -834,6 +896,8 @@ class LimitUsePlugin(Star):
                 "today_tokens": user_daily.get(today, 0),
                 "today_used": daily_usage.get(uid, {}).get(today, 0),
                 "avg_tokens_k": avg_k,
+                "private": private,
+                "groups": groups,
             })
 
         return json_response({
@@ -858,27 +922,6 @@ class LimitUsePlugin(Star):
             "user_id": user_id,
             "remaining": value,
             "total_used": usage.get(user_id, 0),
-        })
-
-    async def api_set_remark(self, user_id: str):
-        try:
-            query = request.query  # 新版 astrbot.api.web 的 PluginMultiDict
-        except AttributeError:
-            query = request.args  # 旧版 quart 的 request
-        text = (query.get("text") or "").strip()
-
-        async with self._kv_lock:
-            remarks = await self._get_remarks()
-            if not text:
-                remarks.pop(user_id, None)
-            else:
-                remarks[user_id] = text
-            await self._save_remarks(remarks)
-
-        return json_response({
-            "ok": True,
-            "user_id": user_id,
-            "remark": remarks.get(user_id, ""),
         })
 
     async def api_get_investments(self):

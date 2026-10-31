@@ -90,11 +90,6 @@
     .neg { color: var(--neg); }
     .muted { color: var(--muted); }
 
-    .remark { cursor: pointer; padding: 2px 6px; border-radius: 6px; display: inline-block; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .remark:hover { background: var(--primary-soft); }
-    .remark.empty { color: var(--muted); font-style: italic; }
-    .remark-input { padding: 4px 8px; border: 1px solid var(--primary); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 13px; width: 130px; outline: none; }
-
     .stepper { display: inline-flex; align-items: center; gap: 4px; }
     .stepper button { width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; font-size: 12px; font-weight: 700; }
     .stepper button:hover { border-color: var(--primary); color: var(--primary); }
@@ -148,13 +143,23 @@
 
       <section class="panel">
         <div class="panel-head">
-          <span class="title">用户列表</span>
+          <span class="title">私聊</span>
           <div class="actions">
-            <input class="search" id="search" placeholder="搜索 QQ 号 / 备注" />
+            <input class="search" id="search" placeholder="搜索昵称 / QQ 号 / 群号" />
           </div>
         </div>
         <div class="table-scroll">
-          <div id="tableWrap"><div class="empty">加载中…</div></div>
+          <div id="privateWrap"><div class="empty">加载中…</div></div>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-top: 16px;">
+        <div class="panel-head">
+          <span class="title">群聊</span>
+          <span class="hint">同一用户在私聊与各群共用一份额度</span>
+        </div>
+        <div class="table-scroll">
+          <div id="groupWrap"><div class="empty">加载中…</div></div>
         </div>
       </section>
     </section>
@@ -188,7 +193,8 @@
     const $ = (id) => document.getElementById(id);
     const toastEl = $('toast');
     const statsEl = $('stats');
-    const tableWrap = $('tableWrap');
+    const privateWrap = $('privateWrap');
+    const groupWrap = $('groupWrap');
     const searchInput = $('search');
     const marketEl = $('market');
     const investStatsEl = $('investStats');
@@ -244,7 +250,8 @@
     }
 
     async function loadUsers() {
-      tableWrap.innerHTML = '<div class="empty">加载中…</div>';
+      privateWrap.innerHTML = '<div class="empty">加载中…</div>';
+      groupWrap.innerHTML = '<div class="empty">加载中…</div>';
       try {
         const res = await bridge.apiGet('users');
         state.users = res.users || [];
@@ -254,9 +261,10 @@
         };
         state.usersLoaded = true;
         renderUserStats();
-        renderUserTable();
+        renderUserTables();
       } catch (e) {
-        tableWrap.innerHTML = `<div class="empty">加载失败：${escapeHtml(e.message || e)}</div>`;
+        privateWrap.innerHTML = `<div class="empty">加载失败：${escapeHtml(e.message || e)}</div>`;
+        groupWrap.innerHTML = '';
       }
     }
 
@@ -276,53 +284,76 @@
       `).join('');
     }
 
-    function renderUserTable() {
+    function userMatches(u, keyword) {
+      if (!keyword) return true
+      const parts = [u.user_id, u.name || ''];
+      (u.groups || []).forEach((g) => parts.push(g.group_id, g.name || ''));
+      return parts.join(' ').toLowerCase().includes(keyword);
+    }
+
+    function userCells(u, displayName, extra) {
+      return `
+        <td class="uid">${escapeHtml(u.user_id)}</td>
+        <td>${escapeHtml(displayName || '—')}${u.is_admin ? ' <span class="muted">管理员</span>' : ''}</td>
+        ${extra}
+        <td><div class="stepper">
+          <button data-delta="-10" title="-10">−</button>
+          <span class="val td-remain">${Number(u.remaining) || 0}</span>
+          <button data-delta="10" title="+10">＋</button>
+        </div></td>
+        <td class="num">${Number(u.today_used) || 0}</td>
+        <td class="num">${Number(u.total_used) || 0}</td>
+        <td class="num">${fmtTokens(u.total_tokens)}</td>
+        <td><div class="stepper">
+          <button data-delta="-1">−1</button>
+          <button data-delta="1">+1</button>
+        </div></td>`;
+    }
+
+    function renderUserTables() {
       const keyword = state.keyword;
-      const list = state.users
-        .filter((u) => {
-          if (!keyword) return true;
-          return `${u.user_id} ${u.remark || ''}`.toLowerCase().includes(keyword);
-        })
-        .sort((a, b) => (Number(b.total_tokens) || 0) - (Number(a.total_tokens) || 0));
+      const users = state.users.filter((u) => userMatches(u, keyword));
 
-      if (!list.length) {
-        tableWrap.innerHTML = `<div class="empty">${state.users.length ? '没有匹配的用户' : '暂无用户数据'}</div>`;
-        return;
-      }
+      const privateRows = users
+        .filter((u) => (u.private && u.private.last) || !(u.groups || []).length)
+        .sort((a, b) => (Number(b.total_tokens) || 0) - (Number(a.total_tokens) || 0))
+        .map((u) => `<tr data-uid="${escapeAttr(u.user_id)}">
+          ${userCells(u, (u.private && u.private.name) || u.name, `<td class="muted">${escapeHtml(u.private && u.private.last ? u.private.last.replace('T', ' ') : '—')}</td>`)}
+        </tr>`)
+        .join('');
 
-      const rows = list.map((u) => {
-        const uid = escapeAttr(u.user_id);
-        const remark = u.remark
-          ? `<span class="remark" title="点击编辑备注">${escapeHtml(u.remark)}</span>`
-          : `<span class="remark empty">+ 备注</span>`;
-        return `<tr data-uid="${uid}">
-          <td class="uid">${escapeHtml(u.user_id)}</td>
-          <td class="td-remark">${remark}</td>
-          <td><div class="stepper">
-            <button data-delta="-10" title="-10">−</button>
-            <span class="val td-remain">${Number(u.remaining) || 0}</span>
-            <button data-delta="10" title="+10">＋</button>
-          </div></td>
-          <td class="num">${Number(u.today_used) || 0}</td>
-          <td class="num">${Number(u.total_used) || 0}</td>
-          <td class="num">${fmtTokens(u.total_tokens)}</td>
-          <td><div class="stepper">
-            <button data-delta="-1">−1</button>
-            <button data-delta="1">+1</button>
-          </div></td>
-        </tr>`;
-      }).join('');
+      const groupRows = [];
+      users.forEach((u) => {
+        (u.groups || []).forEach((g) => {
+          groupRows.push(`<tr data-uid="${escapeAttr(u.user_id)}">
+            ${userCells(u, g.name || u.name, `<td class="uid">${escapeHtml(g.group_id)}</td>`)}
+          </tr>`);
+        });
+      });
 
-      tableWrap.innerHTML = `<table>
-        <thead><tr>
-          <th>QQ 号</th><th>备注</th><th>剩余次数</th>
-          <th>今日调用</th><th>累积调用</th><th>累积 Token</th><th>调整</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>`;
+      privateWrap.innerHTML = privateRows
+        ? `<table>
+            <thead><tr>
+              <th>QQ 号</th><th>昵称</th><th>最近私聊</th><th>剩余次数</th>
+              <th>今日调用</th><th>累积调用</th><th>累积 Token</th><th>调整</th>
+            </tr></thead>
+            <tbody>${privateRows}</tbody>
+          </table>`
+        : `<div class="empty">${state.users.length ? '没有匹配的私聊记录' : '暂无私聊记录'}</div>`;
 
-      tableWrap.querySelectorAll('.td-remark').forEach((el) => el.addEventListener('click', () => editRemark(el)));
-      tableWrap.querySelectorAll('[data-delta]').forEach((btn) => btn.addEventListener('click', () => adjustQuota(btn)));
+      groupWrap.innerHTML = groupRows.length
+        ? `<table>
+            <thead><tr>
+              <th>QQ 号</th><th>昵称</th><th>群号</th><th>剩余次数</th>
+              <th>今日调用</th><th>累积调用</th><th>累积 Token</th><th>调整</th>
+            </tr></thead>
+            <tbody>${groupRows.join('')}</tbody>
+          </table>`
+        : `<div class="empty">${state.users.length ? '没有匹配的群聊记录' : '暂无群聊记录'}</div>`;
+
+      [privateWrap, groupWrap].forEach((wrap) => {
+        wrap.querySelectorAll('[data-delta]').forEach((btn) => btn.addEventListener('click', () => adjustQuota(btn)));
+      });
     }
 
     async function adjustQuota(btn) {
@@ -335,49 +366,20 @@
       btn.disabled = true;
       try {
         const res = await bridge.apiGet(`update/${uid}/${next}`);
-        valEl.textContent = res.remaining;
         const target = state.users.find((u) => String(u.user_id) === String(uid));
         if (target) target.remaining = Number(res.remaining) || 0;
+        [privateWrap, groupWrap].forEach((wrap) => {
+          wrap.querySelectorAll(`tr[data-uid="${CSS.escape(String(uid))}"] .td-remain`).forEach((el) => {
+            el.textContent = res.remaining;
+          });
+        });
+        renderUserStats();
         toast('已更新');
       } catch (e) {
         toast(`操作失败：${e.message || e}`, true);
       } finally {
         btn.disabled = false;
       }
-    }
-
-    function editRemark(td) {
-      const tr = td.closest('tr');
-      const uid = tr.dataset.uid;
-      const old = td.querySelector('.remark') ? td.querySelector('.remark').textContent : '';
-
-      td.innerHTML = '<input class="remark-input" placeholder="备注" maxlength="20" />';
-      const input = td.querySelector('input');
-      input.value = old;
-      input.focus();
-      input.select();
-
-      let done = false;
-      async function finish(save) {
-        if (done) return;
-        done = true;
-        const text = input.value.trim();
-        if (!save) { renderUserTable(); return; }
-        try {
-          await bridge.apiGet(`remark/${uid}`, { text });
-          const target = state.users.find((u) => String(u.user_id) === String(uid));
-          if (target) target.remark = text;
-          toast(text ? '备注已保存' : '备注已清除');
-        } catch (e) {
-          toast(`保存失败：${e.message || e}`, true);
-        }
-        renderUserTable();
-      }
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); finish(true); }
-        if (e.key === 'Escape') { e.preventDefault(); finish(false); }
-      });
-      input.addEventListener('blur', () => finish(true));
     }
 
     async function loadInvest() {
@@ -485,7 +487,7 @@
     });
     searchInput.addEventListener('input', () => {
       state.keyword = searchInput.value.trim().toLowerCase();
-      renderUserTable();
+      renderUserTables();
     });
     $('btnRefresh').addEventListener('click', refresh);
 

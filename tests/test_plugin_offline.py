@@ -130,9 +130,10 @@ def load_schema_defaults() -> dict:
 
 
 class FakeEvent:
-    def __init__(self, user_id="10001", nickname="测试用户"):
+    def __init__(self, user_id="10001", nickname="测试用户", group_id=""):
         self._user_id = user_id
         self._nickname = nickname
+        self._group_id = group_id
         self.sent = []
         self.stopped = False
 
@@ -141,6 +142,9 @@ class FakeEvent:
 
     def get_sender_name(self):
         return self._nickname
+
+    def get_group_id(self):
+        return self._group_id
 
     def plain_result(self, text):
         return ("plain", text)
@@ -311,22 +315,68 @@ class WebApiTest(unittest.IsolatedAsyncioTestCase):
         quota = await plugin._get_quota()
         self.assertEqual(quota, {})
 
-    async def test_set_and_clear_remark(self):
-        plugin = make_plugin()
-        main.request.query = {"text": "小明"}
-        await plugin.api_set_remark("10001")
-        self.assertEqual((await plugin._get_remarks())["10001"], "小明")
-
-        main.request.query = {"text": ""}
-        await plugin.api_set_remark("10001")
-        self.assertNotIn("10001", await plugin._get_remarks())
-
     async def test_get_users_returns_json_body(self):
         plugin = make_plugin()
         await plugin.put_kv_data("user_quota", {"10001": 2})
         result = await plugin.api_get_users()
         self.assertIn("users", result)
         self.assertEqual(result["users"][0]["remaining"], 2)
+
+
+class ProfileTest(unittest.IsolatedAsyncioTestCase):
+    async def test_private_chat_profile(self):
+        plugin = make_plugin()
+        event = FakeEvent(user_id="10001", nickname="小明")
+        async with plugin._kv_lock:
+            await plugin._touch_profile(event)
+
+        profile = (await plugin._get_profiles())["10001"]
+        self.assertEqual(profile["name"], "小明")
+        self.assertEqual(profile["private"]["name"], "小明")
+        self.assertNotIn("groups", profile)
+
+    async def test_group_chat_profile(self):
+        plugin = make_plugin()
+        event = FakeEvent(user_id="10001", nickname="群名片", group_id="555")
+        async with plugin._kv_lock:
+            await plugin._touch_profile(event)
+        async with plugin._kv_lock:
+            await plugin._touch_profile(event)  # 重复触发只刷新
+
+        profile = (await plugin._get_profiles())["10001"]
+        self.assertEqual(profile["groups"]["555"]["name"], "群名片")
+
+    async def test_same_user_in_private_and_groups(self):
+        plugin = make_plugin()
+        async with plugin._kv_lock:
+            await plugin._touch_profile(FakeEvent(user_id="10001", nickname="私聊名"))
+        async with plugin._kv_lock:
+            await plugin._touch_profile(FakeEvent(user_id="10001", nickname="群A名片", group_id="111"))
+        async with plugin._kv_lock:
+            await plugin._touch_profile(FakeEvent(user_id="10001", nickname="群B名片", group_id="222"))
+
+        data = await plugin.api_get_users()
+        user = next(u for u in data["users"] if u["user_id"] == "10001")
+        self.assertEqual(user["name"], "群B名片")
+        self.assertEqual(user["private"]["name"], "私聊名")
+        self.assertEqual({g["group_id"] for g in user["groups"]}, {"111", "222"})
+        self.assertNotIn("remark", user)
+
+    async def test_llm_request_records_profile(self):
+        plugin = make_plugin()
+        async with plugin._kv_lock:
+            await plugin.put_kv_data("user_quota", {"10001": 1})
+        await plugin.on_llm_req(FakeEvent(user_id="10001", nickname="触发昵称", group_id="777"), None)
+        profile = (await plugin._get_profiles())["10001"]
+        self.assertEqual(profile["groups"]["777"]["name"], "触发昵称")
+
+    async def test_view_all_quota_uses_profile_name(self):
+        plugin = make_plugin(admin_users="99999")
+        async with plugin._kv_lock:
+            await plugin.put_kv_data("user_quota", {"10001": 5})
+            await plugin._touch_profile(FakeEvent(user_id="10001", nickname="小明"))
+        items = await collect(plugin.view_all_quota(FakeEvent(user_id="99999")))
+        self.assertIn("小明（10001）：剩余5", items[0][1])
 
 
 class MarketApiTest(unittest.IsolatedAsyncioTestCase):
