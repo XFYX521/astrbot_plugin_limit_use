@@ -21,7 +21,7 @@ except ImportError:  # 旧版没有该模块时退回 quart（保持插件可加
 
 PLUGIN_NAME = "astrbot_plugin_limit_use"
 PLUGIN_DISPLAY_NAME = "对话次数限制"
-PLUGIN_VERSION = "v2.0.0"
+PLUGIN_VERSION = "v2.0.1"
 
 # 投资币种默认值（配置解析失败时兜底），基准价只用于展示现价
 DEFAULT_ASSETS: list[tuple[str, float]] = [

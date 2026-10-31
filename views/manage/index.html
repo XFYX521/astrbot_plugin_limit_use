@@ -1,0 +1,495 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>插件管理 · 对话次数限制</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --card: #ffffff;
+      --border: #e8eaf0;
+      --text: #1f2430;
+      --muted: #7b8190;
+      --primary: #6366f1;
+      --primary-soft: #eef0ff;
+      --pos: #16a34a;
+      --pos-soft: #e8f7ee;
+      --neg: #dc2626;
+      --neg-soft: #fdecec;
+      --shadow: 0 1px 3px rgba(24, 29, 45, 0.06);
+    }
+    [data-theme="dark"] {
+      --bg: #12141c;
+      --card: #1b1e28;
+      --border: #2a2e3c;
+      --text: #e7e9f0;
+      --muted: #9aa0b0;
+      --primary: #818cf8;
+      --primary-soft: #262a3d;
+      --pos: #4ade80;
+      --pos-soft: #1c3326;
+      --neg: #f87171;
+      --neg-soft: #3a1f24;
+      --shadow: none;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: var(--bg); color: var(--text); padding: 24px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; }
+    header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+    header h1 { font-size: 20px; font-weight: 700; }
+    header .sub { color: var(--muted); font-size: 13px; margin-top: 4px; }
+    header .actions { margin-left: auto; display: flex; gap: 8px; }
+    .btn {
+      border: 1px solid var(--border); background: var(--card); color: var(--text);
+      border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; transition: 0.15s;
+    }
+    .btn:hover { border-color: var(--primary); color: var(--primary); }
+
+    .tabs {
+      display: flex; gap: 6px; margin-bottom: 18px;
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      padding: 5px; box-shadow: var(--shadow); width: fit-content; max-width: 100%;
+    }
+    .tab {
+      border: none; background: transparent; color: var(--muted); cursor: pointer;
+      border-radius: 7px; padding: 8px 18px; font-size: 13px; font-weight: 600; transition: 0.15s;
+    }
+    .tab:hover { color: var(--primary); }
+    .tab.active { background: var(--primary); color: #fff; }
+
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .stat { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow); }
+    .stat .label { color: var(--muted); font-size: 12px; }
+    .stat .value { font-size: 22px; font-weight: 700; margin-top: 4px; letter-spacing: -0.3px; }
+    .stat .value.pos { color: var(--pos); }
+    .stat .value.neg { color: var(--neg); }
+
+    .panel { background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+    .panel-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    .panel-head .title { font-size: 15px; font-weight: 700; }
+    .panel-head .actions { margin-left: auto; display: flex; gap: 8px; }
+    .panel-head .hint { margin-left: auto; color: var(--muted); font-size: 12px; }
+    .search { border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 8px; padding: 7px 12px; font-size: 13px; outline: none; min-width: 180px; }
+    .search:focus { border-color: var(--primary); }
+
+    .table-scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 820px; }
+    th, td { padding: 11px 16px; text-align: left; font-size: 13px; }
+    th { color: var(--muted); font-weight: 600; font-size: 12px; background: var(--bg); border-bottom: 1px solid var(--border); white-space: nowrap; }
+    td { border-bottom: 1px solid var(--border); vertical-align: middle; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: var(--primary-soft); }
+    .uid { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+    .num { font-variant-numeric: tabular-nums; font-weight: 600; }
+    .pos { color: var(--pos); }
+    .neg { color: var(--neg); }
+    .muted { color: var(--muted); }
+
+    .remark { cursor: pointer; padding: 2px 6px; border-radius: 6px; display: inline-block; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .remark:hover { background: var(--primary-soft); }
+    .remark.empty { color: var(--muted); font-style: italic; }
+    .remark-input { padding: 4px 8px; border: 1px solid var(--primary); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 13px; width: 130px; outline: none; }
+
+    .stepper { display: inline-flex; align-items: center; gap: 4px; }
+    .stepper button { width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; font-size: 12px; font-weight: 700; }
+    .stepper button:hover { border-color: var(--primary); color: var(--primary); }
+    .stepper .val { min-width: 34px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    .market { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 18px; }
+    .asset { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow); position: relative; overflow: hidden; }
+    .asset::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--primary); }
+    .asset .name { font-size: 14px; font-weight: 700; color: var(--muted); }
+    .asset .price { font-size: 26px; font-weight: 700; margin: 6px 0 3px; letter-spacing: -0.5px; }
+    .asset .base { font-size: 12px; color: var(--muted); }
+    .badge { position: absolute; top: 14px; right: 14px; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 999px; font-variant-numeric: tabular-nums; }
+    .badge.pos { background: var(--pos-soft); color: var(--pos); }
+    .badge.neg { background: var(--neg-soft); color: var(--neg); }
+
+    .empty { padding: 44px 20px; text-align: center; color: var(--muted); font-size: 14px; }
+    .toast {
+      position: fixed; top: 18px; right: 18px; z-index: 99;
+      background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 8px;
+      font-size: 13px; opacity: 0; transform: translateY(-6px); transition: 0.2s; pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: none; }
+    .toast.error { background: var(--neg); color: #fff; }
+    .view[hidden] { display: none; }
+    @media (max-width: 640px) {
+      body { padding: 14px; }
+      header h1 { font-size: 18px; }
+      .tab { padding: 8px 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>对话次数限制</h1>
+        <div class="sub" id="subtitle">用户额度与模拟行情投资</div>
+      </div>
+      <div class="actions">
+        <button class="btn" id="btnRefresh">刷新</button>
+      </div>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" role="tab" data-view="users" aria-selected="true">用户管理</button>
+      <button class="tab" role="tab" data-view="invest" aria-selected="false">行情与投资</button>
+    </nav>
+
+    <section class="view" id="view-users">
+      <section class="stats" id="stats"></section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <span class="title">用户列表</span>
+          <div class="actions">
+            <input class="search" id="search" placeholder="搜索 QQ 号 / 备注" />
+          </div>
+        </div>
+        <div class="table-scroll">
+          <div id="tableWrap"><div class="empty">加载中…</div></div>
+        </div>
+      </section>
+    </section>
+
+    <section class="view" id="view-invest" hidden>
+      <section class="market" id="market"></section>
+      <section class="stats" id="investStats"></section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <span class="title">投资记录</span>
+          <span class="hint" id="feeHint"></span>
+        </div>
+        <div class="table-scroll">
+          <div id="investTableWrap"><div class="empty">加载中…</div></div>
+        </div>
+      </section>
+    </section>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script type="module">
+    const bridge = window.AstrBotPluginView || window.AstrBotPluginPage;
+    if (!bridge) {
+      document.body.innerHTML = '<div class="empty">无法加载插件页面：缺少 AstrBot 页面桥接（请通过 AstrBot WebUI 打开）。</div>';
+      throw new Error('AstrBot plugin page bridge is missing');
+    }
+    await bridge.ready();
+
+    const $ = (id) => document.getElementById(id);
+    const toastEl = $('toast');
+    const statsEl = $('stats');
+    const tableWrap = $('tableWrap');
+    const searchInput = $('search');
+    const marketEl = $('market');
+    const investStatsEl = $('investStats');
+    const investTableWrap = $('investTableWrap');
+    const feeHint = $('feeHint');
+
+    const state = {
+      view: 'users',
+      users: [],
+      meta: { today_tokens_sum: 0, total_tokens_sum: 0 },
+      keyword: '',
+      history: [],
+      usersLoaded: false,
+      investLoaded: false,
+    };
+
+    function toast(msg, isError = false) {
+      toastEl.textContent = msg;
+      toastEl.className = 'toast show' + (isError ? ' error' : '');
+      clearTimeout(toast._t);
+      toast._t = setTimeout(() => toastEl.classList.remove('show'), 2200);
+    }
+    function escapeHtml(value) {
+      const div = document.createElement('div');
+      div.textContent = value == null ? '' : String(value);
+      return div.innerHTML;
+    }
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+    function fmtTokens(n) {
+      n = Number(n) || 0;
+      if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+      if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+      return String(n);
+    }
+
+    function setView(view) {
+      state.view = view === 'invest' ? 'invest' : 'users';
+      document.querySelectorAll('.tab').forEach((tab) => {
+        const active = tab.dataset.view === state.view;
+        tab.classList.toggle('active', active);
+        tab.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+      $('view-users').hidden = state.view !== 'users';
+      $('view-invest').hidden = state.view !== 'invest';
+      $('subtitle').textContent = state.view === 'users'
+        ? '用户额度与用量'
+        : '今日模拟行情 · 每日 0 点更新';
+      history.replaceState(null, '', '#' + state.view);
+      if (state.view === 'users' && !state.usersLoaded) loadUsers();
+      if (state.view === 'invest' && !state.investLoaded) loadInvest();
+    }
+
+    async function loadUsers() {
+      tableWrap.innerHTML = '<div class="empty">加载中…</div>';
+      try {
+        const res = await bridge.apiGet('users');
+        state.users = res.users || [];
+        state.meta = {
+          today_tokens_sum: res.today_tokens_sum || 0,
+          total_tokens_sum: res.total_tokens_sum || 0,
+        };
+        state.usersLoaded = true;
+        renderUserStats();
+        renderUserTable();
+      } catch (e) {
+        tableWrap.innerHTML = `<div class="empty">加载失败：${escapeHtml(e.message || e)}</div>`;
+      }
+    }
+
+    function renderUserStats() {
+      const users = state.users;
+      const usedSum = users.reduce((s, u) => s + (Number(u.total_used) || 0), 0);
+      const remainSum = users.reduce((s, u) => s + (Number(u.remaining) || 0), 0);
+      const items = [
+        ['用户总数', users.length],
+        ['累积调用', usedSum],
+        ['剩余总次数', remainSum],
+        ['累积 Token', fmtTokens(state.meta.total_tokens_sum)],
+        ['今日 Token', fmtTokens(state.meta.today_tokens_sum)],
+      ];
+      statsEl.innerHTML = items.map(([label, value]) => `
+        <div class="stat"><div class="label">${label}</div><div class="value">${escapeHtml(value)}</div></div>
+      `).join('');
+    }
+
+    function renderUserTable() {
+      const keyword = state.keyword;
+      const list = state.users
+        .filter((u) => {
+          if (!keyword) return true;
+          return `${u.user_id} ${u.remark || ''}`.toLowerCase().includes(keyword);
+        })
+        .sort((a, b) => (Number(b.total_tokens) || 0) - (Number(a.total_tokens) || 0));
+
+      if (!list.length) {
+        tableWrap.innerHTML = `<div class="empty">${state.users.length ? '没有匹配的用户' : '暂无用户数据'}</div>`;
+        return;
+      }
+
+      const rows = list.map((u) => {
+        const uid = escapeAttr(u.user_id);
+        const remark = u.remark
+          ? `<span class="remark" title="点击编辑备注">${escapeHtml(u.remark)}</span>`
+          : `<span class="remark empty">+ 备注</span>`;
+        return `<tr data-uid="${uid}">
+          <td class="uid">${escapeHtml(u.user_id)}</td>
+          <td class="td-remark">${remark}</td>
+          <td><div class="stepper">
+            <button data-delta="-10" title="-10">−</button>
+            <span class="val td-remain">${Number(u.remaining) || 0}</span>
+            <button data-delta="10" title="+10">＋</button>
+          </div></td>
+          <td class="num">${Number(u.today_used) || 0}</td>
+          <td class="num">${Number(u.total_used) || 0}</td>
+          <td class="num">${fmtTokens(u.total_tokens)}</td>
+          <td><div class="stepper">
+            <button data-delta="-1">−1</button>
+            <button data-delta="1">+1</button>
+          </div></td>
+        </tr>`;
+      }).join('');
+
+      tableWrap.innerHTML = `<table>
+        <thead><tr>
+          <th>QQ 号</th><th>备注</th><th>剩余次数</th>
+          <th>今日调用</th><th>累积调用</th><th>累积 Token</th><th>调整</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+
+      tableWrap.querySelectorAll('.td-remark').forEach((el) => el.addEventListener('click', () => editRemark(el)));
+      tableWrap.querySelectorAll('[data-delta]').forEach((btn) => btn.addEventListener('click', () => adjustQuota(btn)));
+    }
+
+    async function adjustQuota(btn) {
+      const tr = btn.closest('tr');
+      const uid = tr.dataset.uid;
+      const delta = Number(btn.dataset.delta);
+      const valEl = tr.querySelector('.td-remain');
+      const next = Math.max(0, (Number(valEl.textContent) || 0) + delta);
+      if (next === Number(valEl.textContent)) return;
+      btn.disabled = true;
+      try {
+        const res = await bridge.apiGet(`update/${uid}/${next}`);
+        valEl.textContent = res.remaining;
+        const target = state.users.find((u) => String(u.user_id) === String(uid));
+        if (target) target.remaining = Number(res.remaining) || 0;
+        toast('已更新');
+      } catch (e) {
+        toast(`操作失败：${e.message || e}`, true);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function editRemark(td) {
+      const tr = td.closest('tr');
+      const uid = tr.dataset.uid;
+      const old = td.querySelector('.remark') ? td.querySelector('.remark').textContent : '';
+
+      td.innerHTML = '<input class="remark-input" placeholder="备注" maxlength="20" />';
+      const input = td.querySelector('input');
+      input.value = old;
+      input.focus();
+      input.select();
+
+      let done = false;
+      async function finish(save) {
+        if (done) return;
+        done = true;
+        const text = input.value.trim();
+        if (!save) { renderUserTable(); return; }
+        try {
+          await bridge.apiGet(`remark/${uid}`, { text });
+          const target = state.users.find((u) => String(u.user_id) === String(uid));
+          if (target) target.remark = text;
+          toast(text ? '备注已保存' : '备注已清除');
+        } catch (e) {
+          toast(`保存失败：${e.message || e}`, true);
+        }
+        renderUserTable();
+      }
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+        if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+      });
+      input.addEventListener('blur', () => finish(true));
+    }
+
+    async function loadInvest() {
+      investTableWrap.innerHTML = '<div class="empty">加载中…</div>';
+      try {
+        const [market, invest] = await Promise.all([
+          bridge.apiGet('market'),
+          bridge.apiGet('investments'),
+        ]);
+        renderMarket(market || {});
+        state.history = (invest && invest.investments) || [];
+        state.investLoaded = true;
+        renderInvestStats();
+        renderInvestTable();
+      } catch (e) {
+        investTableWrap.innerHTML = `<div class="empty">加载失败：${escapeHtml(e.message || e)}</div>`;
+      }
+    }
+
+    function renderMarket(data) {
+      const assets = data.assets || [];
+      if (state.view === 'invest' && data.date) {
+        $('subtitle').textContent = `${data.date} · 模拟行情，仅供娱乐`;
+      }
+      feeHint.textContent = Number(data.fee_percent) > 0
+        ? `手续费 ${data.fee_percent}%`
+        : '免手续费';
+
+      if (!assets.length) {
+        marketEl.innerHTML = '<div class="empty">暂无行情数据</div>';
+        return;
+      }
+      marketEl.innerHTML = assets.map((a) => {
+        const change = Number(a.change_percent) || 0;
+        const cls = change >= 0 ? 'pos' : 'neg';
+        const sign = change >= 0 ? '+' : '';
+        return `<div class="asset">
+          <div class="name">${escapeHtml(a.name)}</div>
+          <div class="price">${Number(a.price).toFixed(2)}</div>
+          <div class="base">基准价 ${escapeHtml(a.base)}</div>
+          <span class="badge ${cls}">${sign}${change.toFixed(2)}%</span>
+        </div>`;
+      }).join('');
+    }
+
+    function renderInvestStats() {
+      const history = state.history;
+      const users = new Set(history.map((h) => h.user_id)).size;
+      const stakeSum = history.reduce((s, h) => s + (Number(h.stake) || 0), 0);
+      const pnlSum = history.reduce((s, h) => s + (Number(h.pnl) || 0), 0);
+      const items = [
+        ['投资笔数', history.length, ''],
+        ['参与用户', users, ''],
+        ['累计投入', stakeSum, ''],
+        ['累计盈亏', `${pnlSum >= 0 ? '+' : ''}${pnlSum}`, pnlSum >= 0 ? 'pos' : 'neg'],
+      ];
+      investStatsEl.innerHTML = items.map(([label, value, cls]) => `
+        <div class="stat"><div class="label">${label}</div><div class="value ${cls}">${escapeHtml(value)}</div></div>
+      `).join('');
+    }
+
+    function renderInvestTable() {
+      const history = state.history;
+      if (!history.length) {
+        investTableWrap.innerHTML = '<div class="empty">暂无投资记录，去群里发 /投资 试试吧</div>';
+        return;
+      }
+      const rows = history.map((item) => {
+        const pnl = Number(item.pnl) || 0;
+        const pnlCls = pnl >= 0 ? 'pos' : 'neg';
+        const rate = Number(item.rate) || 0;
+        const rateText = `${rate >= 0 ? '+' : ''}${(rate * 100).toFixed(2)}%`;
+        const time = String(item.time || '').replace('T', ' ');
+        const fee = Number(item.fee) || 0;
+        return `<tr>
+          <td class="muted">${escapeHtml(time)}</td>
+          <td>${escapeHtml(item.nickname || item.user_id || '')}<div class="uid muted">${escapeHtml(item.user_id || '')}</div></td>
+          <td>${escapeHtml(item.asset || '')}</td>
+          <td class="num">${escapeHtml(item.percent)}%</td>
+          <td class="num">${escapeHtml(item.stake)}</td>
+          <td class="num ${rate >= 0 ? 'pos' : 'neg'}">${escapeHtml(rateText)}</td>
+          <td class="num ${pnlCls}">${pnl >= 0 ? '+' : ''}${pnl}</td>
+          <td class="num muted">${fee ? fee : '—'}</td>
+          <td class="num">${escapeHtml(item.balance_before)} → ${escapeHtml(item.balance_after)}</td>
+        </tr>`;
+      }).join('');
+
+      investTableWrap.innerHTML = `<table>
+        <thead><tr>
+          <th>时间</th><th>用户</th><th>币种</th><th>投入比例</th><th>投入次数</th>
+          <th>今日行情</th><th>盈亏</th><th>手续费</th><th>余额变化</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+    }
+
+    async function refresh() {
+      if (state.view === 'users') { await loadUsers(); }
+      else { await loadInvest(); }
+      toast('已刷新');
+    }
+
+    document.querySelectorAll('.tab').forEach((tab) => {
+      tab.addEventListener('click', () => setView(tab.dataset.view));
+    });
+    searchInput.addEventListener('input', () => {
+      state.keyword = searchInput.value.trim().toLowerCase();
+      renderUserTable();
+    });
+    $('btnRefresh').addEventListener('click', refresh);
+
+    setView(location.hash === '#invest' ? 'invest' : 'users');
+  </script>
+</body>
+</html>
