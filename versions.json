@@ -2,12 +2,26 @@
   "$meta": {
     "schema_version": 1,
     "name": "XFYX521 插件源",
-    "version": "2026-10-31T21:49:57+08:00",
+    "version": "2026-10-31T22:04:12+08:00",
     "homepage": "https://github.com/XFYX521/astrbot_plugin_limit_use",
     "repository": "https://github.com/XFYX521/astrbot_plugin_limit_use",
     "description": "XFYX521 的 AstrBot 插件源，提供对话次数限制插件的更新检测",
     "updated_at": "2026-10-31T00:00:00Z",
     "releases": [
+      {
+        "version": "v2.2.0",
+        "date": "2026-10-31",
+        "commit": "7c910d9500b454e576369256ac2b17bdc48b125d",
+        "tag": "v2.2.0",
+        "zip_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v2.2.0.zip",
+        "changes": [
+          "🗑️ WebUI 用户列表每行新增「删除」：确认后删除该用户的额度、签到、调用统计、Token、投资记录与昵称档案；新增 `POST /astrbot_plugin_limit_use/users/<QQ号>/delete`",
+          "🗂️ 用户列表改为「群聊在上、私聊在下」，两个分区标题可点击折叠（状态记在浏览器本地）",
+          "🏦 `/查看全部余额` 改为文生图卡片：群聊中只统计本群出现过的用户，私聊统计全部用户，渲染失败回落文本",
+          "🧪 离线测试新增删除用户、分区余额筛选与图片渲染用例（57 → 63 项）"
+        ],
+        "note": null
+      },
       {
         "version": "v2.1.1",
         "date": "2026-10-31",
@@ -344,7 +358,7 @@
   "XFYX521/astrbot_plugin_limit_use": {
     "author": "XFYX521",
     "name": "astrbot_plugin_limit_use",
-    "version": "v2.1.1",
+    "version": "v2.2.0",
     "repo": "https://github.com/XFYX521/astrbot_plugin_limit_use",
     "desc": "给 QQ 用户设置对话次数额度，次数用完后需签到补充；支持按余额百分比模拟行情投资。",
     "short_desc": "按用户限制对话次数，额度用完后签到补充。",
@@ -359,7 +373,7 @@
       "aiocqhttp"
     ],
     "astrbot_version": ">=4.29.0,<5",
-    "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v2.1.1.zip",
+    "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v2.2.0.zip",
     "updated_at": "2026-10-31T00:00:00Z"
   }
 }
