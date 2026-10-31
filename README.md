@@ -75,11 +75,15 @@ git clone https://github.com/XFYX521/astrbot_plugin_limit_use.git
 ```
 astrbot_plugin_limit_use/
 ├── main.py              # 插件主逻辑
-├── metadata.yaml        # 插件元数据
+├── metadata.yaml        # 插件元数据（版本号的唯一来源）
 ├── _conf_schema.json    # 配置定义
+├── versions.json        # 机器可读版本列表（更新市场记录/脚本用）
+├── VERSIONS.md          # 人类可读版本列表与发版步骤
 ├── views/
 │   └── info/
 │       └── index.html   # WebUI 用户管理视图
+├── scripts/
+│   └── gen_versions.py  # 由 CHANGELOG + git 历史生成版本列表
 ├── tests/
 │   └── test_plugin_offline.py  # 离线单元测试（无需 AstrBot 环境）
 └── README.md            # 本文件
@@ -91,7 +95,7 @@ astrbot_plugin_limit_use/
 - 早于 4.29.0 的 AstrBot 不会渲染本插件的 WebUI 用户管理页面，请先升级
 - 消息平台：QQ（aiocqhttp）
 
-无第三方 Python 依赖，无需 `requirements.txt`。
+无第三方 Python 依赖，因此没有 `requirements.txt`（该文件是插件三方依赖的 pip 清单，AstrBot 安装插件时会据此安装；只有引入 `aiohttp`、`pyyaml` 这类非标准库时才需要创建）。
 
 ## 验收步骤
 
@@ -105,6 +109,15 @@ astrbot_plugin_limit_use/
 4. `/我的余额`、`/帮助` 正常；管理员发送 `/查看全部余额` 输出「备注：剩余N」。
 5. WebUI 用户管理视图：数据加载、`+10`/`-1` 调整次数、备注编辑保存、刷新按钮均正常。
 6. 浏览器直接访问非法参数（如 `/astrbot_plugin_limit_use/update/<QQ号>/abc`）返回 400 而非 500。
+
+## 版本与发布
+
+- 版本号唯一来源是 `metadata.yaml` 的 `version`；`versions.json` 与 `VERSIONS.md` 由
+  `python scripts/gen_versions.py` 从 `CHANGELOG.md` 和 git 历史生成，**不要手改**。
+- 发版流程：改 `metadata.yaml` 版本 + 在 `CHANGELOG.md` 顶部加条目 → 运行生成脚本 →
+  提交 → `git tag -a vX.Y.Z -m "vX.Y.Z"` → 推送 `master` 与 tags。
+- 更新插件市场记录时，`version` 取 `metadata.yaml`，`repo` 填仓库地址，`download_url`
+  可选填 `versions.json` 中该版本的 `zip_url`（依赖已推送的同名 tag）。详见 [VERSIONS.md](VERSIONS.md)。
 
 ## 更新日志
 
