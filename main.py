@@ -21,7 +21,7 @@ except ImportError:  # 旧版没有该模块时退回 quart（保持插件可加
 
 PLUGIN_NAME = "astrbot_plugin_limit_use"
 PLUGIN_DISPLAY_NAME = "对话次数限制"
-PLUGIN_VERSION = "v1.0.18"
+PLUGIN_VERSION = "v1.0.19"
 
 # 投资币种默认值（配置解析失败时兜底），基准价只用于展示现价
 DEFAULT_ASSETS: list[tuple[str, float]] = [
@@ -140,40 +140,49 @@ def _moving_rate(asset: str, day: str, volatility: float) -> float:
 
 _CARD_CSS = """
 * { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; }
 body {
   font-family: "Microsoft YaHei", "PingFang SC", -apple-system, sans-serif;
   background: #eef2ff;
-  padding: 20px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 28px;
 }
 .card {
-  width: 660px; margin: 0 auto; background: #ffffff;
-  border-radius: 16px; overflow: hidden;
+  width: 720px; min-height: calc(100vh - 56px);
+  background: #ffffff; border-radius: 18px; overflow: hidden;
   box-shadow: 0 8px 24px rgba(79, 70, 229, 0.12);
   color: #1f2937;
+  display: flex; flex-direction: column;
 }
 .head {
-  padding: 18px 24px; color: #ffffff;
+  padding: 22px 32px; color: #ffffff;
   background: linear-gradient(135deg, #6366f1, #8b5cf6);
 }
-.head .title { font-size: 22px; font-weight: 700; }
-.head .subtitle { font-size: 13px; opacity: 0.85; margin-top: 4px; }
-.body { padding: 18px 24px; }
-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-th, td { padding: 9px 10px; text-align: left; }
-th { color: #6b7280; font-size: 12px; border-bottom: 2px solid #e5e7eb; }
+.head .title { font-size: 28px; font-weight: 700; letter-spacing: 0.5px; }
+.head .subtitle { font-size: 16px; opacity: 0.9; margin-top: 6px; }
+.body {
+  flex: 1; padding: 24px 32px;
+  display: flex; flex-direction: column; justify-content: center; gap: 20px;
+}
+table { width: 100%; border-collapse: collapse; font-size: 18px; }
+th, td { padding: 13px 12px; text-align: left; }
+th { color: #6b7280; font-size: 16px; font-weight: 600; border-bottom: 2px solid #e5e7eb; }
 td { border-bottom: 1px solid #f3f4f6; }
 tr:last-child td { border-bottom: none; }
-.kv { margin: 14px 0; }
-.kv-row { display: flex; justify-content: space-between; padding: 7px 0; font-size: 14px; }
+.kv { display: flex; flex-direction: column; }
+.kv-row {
+  display: flex; justify-content: space-between; align-items: baseline;
+  padding: 11px 0; font-size: 19px;
+}
 .kv-row .k { color: #6b7280; }
 .kv-row .v { font-weight: 600; }
 .kv-row .v.pos { color: #16a34a; }
 .kv-row .v.neg { color: #dc2626; }
 .note {
-  margin-top: 14px; padding: 10px 12px; border-radius: 8px;
-  background: #f5f3ff; color: #6d28d9; font-size: 13px; line-height: 1.6;
+  padding: 14px 16px; border-radius: 10px;
+  background: #f5f3ff; color: #6d28d9; font-size: 17px; line-height: 1.7;
 }
-.footer { padding: 12px 24px 16px; color: #9ca3af; font-size: 12px; text-align: center; }
+.footer { padding: 16px 32px 22px; color: #9ca3af; font-size: 15px; text-align: center; }
 """
 
 
