@@ -137,6 +137,14 @@
     .toast.show { opacity: 1; }
     .toast-success { background: #22c55e; color: #fff; }
     .toast-error { background: #ef4444; color: #fff; }
+
+    .section-title {
+      font-size: 17px; margin: 26px 0 12px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .section-title .h1-right { margin-left: auto; }
+    .pos { color: #16a34a; font-weight: 600; }
+    .neg { color: #dc2626; font-weight: 600; }
   </style>
 </head>
 <body>
@@ -151,6 +159,15 @@
   <div class="stats-bar" id="statsBar"></div>
 
   <div id="tableWrap"><div class="loading">加载中...</div></div>
+
+  <h2 class="section-title">
+    📈 投资记录
+    <span class="h1-right">
+      <button class="btn btn-refresh" id="btnRefreshInv">🔄 刷新</button>
+    </span>
+  </h2>
+  <div id="investWrap"><div class="loading">加载中...</div></div>
+
   <div id="toast" class="toast"></div>
 
   <script type="module">
@@ -159,8 +176,10 @@
 
     const statsBar = document.getElementById('statsBar');
     const tableWrap = document.getElementById('tableWrap');
+    const investWrap = document.getElementById('investWrap');
     const toastEl = document.getElementById('toast');
     const btnRefresh = document.getElementById('btnRefresh');
+    const btnRefreshInv = document.getElementById('btnRefreshInv');
 
     let usersData = [];
     let metaData = {};
@@ -179,6 +198,7 @@
     }
 
     btnRefresh.addEventListener('click', () => { loadData(); toast('已刷新'); });
+    btnRefreshInv.addEventListener('click', () => { loadInvestments(); toast('已刷新'); });
 
     // ── 加载数据 ──
     async function loadData() {
@@ -344,7 +364,57 @@
       input.addEventListener('blur', () => { finish(true); });
     }
 
+    // ── 投资记录 ──
+    async function loadInvestments() {
+      investWrap.innerHTML = '<div class="loading">加载中...</div>';
+      try {
+        const res = await bridge.apiGet('investments');
+        const list = res.investments || [];
+        if (!list.length) {
+          investWrap.innerHTML = '<div class="empty-state">暂无投资记录</div>';
+          return;
+        }
+        let html = `<table>
+          <thead><tr>
+            <th>时间</th>
+            <th>用户</th>
+            <th>币种</th>
+            <th>方向</th>
+            <th>杠杆</th>
+            <th>投入</th>
+            <th>行情</th>
+            <th>盈亏</th>
+            <th>手续费</th>
+            <th>余额变化</th>
+          </tr></thead><tbody>`;
+        for (const item of list) {
+          const pnl = Number(item.pnl) || 0;
+          const pnlCls = pnl >= 0 ? 'pos' : 'neg';
+          const rate = Number(item.rate) || 0;
+          const rateText = `${rate >= 0 ? '+' : ''}${(rate * 100).toFixed(2)}%`;
+          const time = String(item.time || '').replace('T', ' ');
+          html += `<tr>
+            <td>${escapeHtml(time)}</td>
+            <td>${escapeHtml(String(item.nickname || item.user_id || ''))}</td>
+            <td>${escapeHtml(String(item.asset || ''))}</td>
+            <td>${escapeHtml(String(item.direction || ''))}</td>
+            <td>${escapeHtml(String(item.leverage || ''))}x</td>
+            <td>${escapeHtml(String(item.stake || 0))}</td>
+            <td>${escapeHtml(rateText)}</td>
+            <td><span class="${pnlCls}">${pnl >= 0 ? '+' : ''}${pnl}</span></td>
+            <td>${escapeHtml(String(item.fee || 0))}</td>
+            <td>${escapeHtml(String(item.balance_before ?? ''))} → ${escapeHtml(String(item.balance_after ?? ''))}</td>
+          </tr>`;
+        }
+        html += '</tbody></table>';
+        investWrap.innerHTML = html;
+      } catch (e) {
+        investWrap.innerHTML = `<div class="loading" style="color:#ef4444;">加载失败: ${escapeHtml(e.message)}</div>`;
+      }
+    }
+
     loadData();
+    loadInvestments();
   </script>
 </body>
 </html>

@@ -1,6 +1,8 @@
 import asyncio
 import datetime
+import hashlib
 import random
+from html import escape as html_escape
 
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
@@ -18,6 +20,29 @@ except ImportError:  # 旧版没有该模块时退回 quart（保持插件可加
         return jsonify({"error": message}), status_code
 
 PLUGIN_NAME = "astrbot_plugin_limit_use"
+PLUGIN_DISPLAY_NAME = "对话次数限制"
+PLUGIN_VERSION = "v1.0.18"
+
+# 投资币种默认值（配置解析失败时兜底），基准价只用于展示现价
+DEFAULT_ASSETS: list[tuple[str, float]] = [
+    ("原石", 160.0),
+    ("菲林", 100.0),
+    ("水晶", 280.0),
+    ("星琼", 160.0),
+]
+
+_DIRECTION_MAP = {
+    "做多": "long",
+    "多": "long",
+    "买": "long",
+    "buy": "long",
+    "long": "long",
+    "做空": "short",
+    "空": "short",
+    "卖": "short",
+    "sell": "short",
+    "short": "short",
+}
 
 
 def _get_attr(obj, attr, default=0):
@@ -37,20 +62,22 @@ def _as_int(value, default: int = 0) -> int:
         return default
 
 
-def _parse_signin_weights(raw) -> tuple[list[int], list[int]]:
-    """解析“每行 值:权重”的签到权重配置。
-
-    兼容历史默认值中写坏的字面量 ``\\n``（反斜杠 + n，而不是真换行），
-    也接受真实换行、CRLF。权重 <= 0 或格式错误的行会被跳过。
-    """
+def _config_lines(raw) -> list[str]:
+    """拆分配置中的多行文本，兼容字面量 ``\\n``、CRLF 与真换行。"""
     text = str(raw or "")
     text = text.replace("\\r\\n", "\n").replace("\\n", "\n")
     text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return [line.strip() for line in text.split("\n")]
 
+
+def _parse_signin_weights(raw) -> tuple[list[int], list[int]]:
+    """解析“每行 值:权重”的签到权重配置。
+
+    权重 <= 0 或格式错误的行会被跳过。
+    """
     values: list[int] = []
     weights: list[int] = []
-    for line in text.split("\n"):
-        line = line.strip()
+    for line in _config_lines(raw):
         if not line or ":" not in line:
             continue
         left, _, right = line.partition(":")
@@ -64,6 +91,136 @@ def _parse_signin_weights(raw) -> tuple[list[int], list[int]]:
         values.append(value)
         weights.append(weight)
     return values, weights
+
+
+def _parse_invest_assets(raw) -> list[tuple[str, float]]:
+    """解析“每行 币种:基准价”的投资配置；非法行跳过。"""
+    assets: list[tuple[str, float]] = []
+    seen: set[str] = set()
+    for line in _config_lines(raw):
+        if not line or ":" not in line:
+            continue
+        name, _, price_text = line.partition(":")
+        name = name.strip()
+        try:
+            price = float(price_text.strip())
+        except (TypeError, ValueError):
+            continue
+        if not name or name in seen or price <= 0:
+            continue
+        seen.add(name)
+        assets.append((name, price))
+    return assets
+
+
+def _parse_leverage_options(raw) -> list[int]:
+    """解析“2,5”形式的可选杠杆列表，去重并保持顺序。"""
+    options: list[int] = []
+    for token in str(raw or "").replace("，", ",").split(","):
+        value = _as_int(token.strip().lower().removesuffix("x"), -1)
+        if value > 0 and value not in options:
+            options.append(value)
+    return options
+
+
+def _normalize_direction(raw) -> str | None:
+    """把“做多/做空/long/short”统一成 long/short，非法返回 None。"""
+    return _DIRECTION_MAP.get(str(raw or "").strip().lower())
+
+
+def _moving_rate(asset: str, day: str, volatility: float) -> float:
+    """确定性模拟行情：同一「日期 + 币种」永远得到同一涨跌幅（小数形式）。"""
+    if volatility <= 0:
+        return 0.0
+    digest = hashlib.sha256(f"{day}|{asset}".encode("utf-8")).digest()
+    seed = int.from_bytes(digest[:8], "big")
+    percent = random.Random(seed).uniform(-volatility, volatility)
+    return round(percent / 100, 6)
+
+
+_CARD_CSS = """
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: "Microsoft YaHei", "PingFang SC", -apple-system, sans-serif;
+  background: #eef2ff;
+  padding: 20px;
+}
+.card {
+  width: 660px; margin: 0 auto; background: #ffffff;
+  border-radius: 16px; overflow: hidden;
+  box-shadow: 0 8px 24px rgba(79, 70, 229, 0.12);
+  color: #1f2937;
+}
+.head {
+  padding: 18px 24px; color: #ffffff;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+}
+.head .title { font-size: 22px; font-weight: 700; }
+.head .subtitle { font-size: 13px; opacity: 0.85; margin-top: 4px; }
+.body { padding: 18px 24px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { padding: 9px 10px; text-align: left; }
+th { color: #6b7280; font-size: 12px; border-bottom: 2px solid #e5e7eb; }
+td { border-bottom: 1px solid #f3f4f6; }
+tr:last-child td { border-bottom: none; }
+.kv { margin: 14px 0; }
+.kv-row { display: flex; justify-content: space-between; padding: 7px 0; font-size: 14px; }
+.kv-row .k { color: #6b7280; }
+.kv-row .v { font-weight: 600; }
+.kv-row .v.pos { color: #16a34a; }
+.kv-row .v.neg { color: #dc2626; }
+.note {
+  margin-top: 14px; padding: 10px 12px; border-radius: 8px;
+  background: #f5f3ff; color: #6d28d9; font-size: 13px; line-height: 1.6;
+}
+.footer { padding: 12px 24px 16px; color: #9ca3af; font-size: 12px; text-align: center; }
+"""
+
+
+def _build_card_html(title: str, subtitle: str, sections: list, footer: str = "") -> str:
+    """把结构化的卡片数据渲染成浅色卡片 HTML（所有文本都会转义）。"""
+    esc = html_escape
+    parts: list[str] = []
+    for section in sections:
+        kind = section.get("type")
+        if kind == "table":
+            head = "".join(f"<th>{esc(str(h))}</th>" for h in section.get("headers", []))
+            rows = []
+            for row in section.get("rows", []):
+                cells = []
+                for cell in row:
+                    cls = ""
+                    if isinstance(cell, (tuple, list)) and len(cell) == 2:
+                        cell, cls_name = cell
+                        if cls_name:
+                            cls = f' class="{esc(str(cls_name))}"'
+                    cells.append(f"<td{cls}>{esc(str(cell))}</td>")
+                rows.append("<tr>" + "".join(cells) + "</tr>")
+            parts.append(
+                f"<table><thead><tr>{head}</tr></thead>"
+                f"<tbody>{''.join(rows)}</tbody></table>"
+            )
+        elif kind == "kv":
+            items = []
+            for item in section.get("items", []):
+                label, value = item[0], item[1]
+                cls = f' class="{esc(str(item[2]))}"' if len(item) > 2 and item[2] else ""
+                items.append(
+                    f'<div class="kv-row"><span class="k">{esc(str(label))}</span>'
+                    f'<span class="v"{cls}>{esc(str(value))}</span></div>'
+                )
+            parts.append('<div class="kv">' + "".join(items) + "</div>")
+        elif kind == "note":
+            parts.append(f'<div class="note">{esc(str(section.get("text", "")))}</div>')
+
+    subtitle_html = f'<div class="subtitle">{esc(str(subtitle))}</div>' if subtitle else ""
+    footer_html = f'<div class="footer">{esc(str(footer))}</div>' if footer else ""
+    return (
+        '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8" />'
+        f"<style>{_CARD_CSS}</style></head><body><div class=\"card\">"
+        f'<div class="head"><div class="title">{esc(str(title))}</div>{subtitle_html}</div>'
+        f'<div class="body">{"".join(parts)}</div>{footer_html}</div></body></html>'
+    )
 
 
 def _extract_tokens(resp) -> int:
@@ -127,6 +284,12 @@ class LimitUsePlugin(Star):
                 self.api_set_remark,
                 ["GET"],
                 "设置用户备注",
+            )
+            context.register_web_api(
+                f"/{PLUGIN_NAME}/investments",
+                self.api_get_investments,
+                ["GET"],
+                "获取投资记录",
             )
             logger.info("LimitUsePlugin: Web API 已注册")
         except Exception as e:
@@ -204,6 +367,19 @@ class LimitUsePlugin(Star):
         daily[user_id] = user_daily
         await self._save_daily_usage(daily)
 
+    async def _get_invest_daily(self) -> dict:
+        """{uid: 上次投资日期}"""
+        return await self.get_kv_data("invest_daily", {}) or {}
+
+    async def _save_invest_daily(self, data: dict):
+        await self.put_kv_data("invest_daily", data)
+
+    async def _get_invest_history(self) -> list:
+        return await self.get_kv_data("invest_history", []) or []
+
+    async def _save_invest_history(self, data: list):
+        await self.put_kv_data("invest_history", data)
+
     # ══════════════════════════════════════════════
     #  工具方法
     # ══════════════════════════════════════════════
@@ -217,6 +393,120 @@ class LimitUsePlugin(Star):
         usage[user_id] = usage.get(user_id, 0) + 1
         await self._save_total_usage(usage)
         await self._record_daily_usage(user_id)
+
+    # ── 投资模式工具 ──
+
+    def _assets(self) -> list[tuple[str, float]]:
+        """读取可投资币种，配置为空或全非法时回落到默认币种。"""
+        assets = _parse_invest_assets(self.config.get("invest_assets", ""))
+        return assets or list(DEFAULT_ASSETS)
+
+    def _leverage_options(self) -> list[int]:
+        options = _parse_leverage_options(self.config.get("invest_leverage_options", "2,5"))
+        return options or [2, 5]
+
+    def _default_leverage(self) -> int:
+        options = self._leverage_options()
+        value = _as_int(self.config.get("invest_default_leverage", options[0]), options[0])
+        return value if value in options else options[0]
+
+    def _volatility(self) -> float:
+        try:
+            value = float(self.config.get("invest_volatility", 3))
+        except (TypeError, ValueError):
+            value = 3.0
+        return max(0.0, value)
+
+    def _fee_percent(self) -> float:
+        try:
+            value = float(self.config.get("invest_fee_percent", 1))
+        except (TypeError, ValueError):
+            value = 1.0
+        return max(0.0, value)
+
+    def _rate(self, asset: str, day: str) -> float:
+        return _moving_rate(asset, day, self._volatility())
+
+    def _resolve_leverage(self, raw, options: list[int]) -> int | None:
+        """解析用户输入的杠杆；为空用默认值，非法返回 None。"""
+        text = str(raw or "").strip().lower().removesuffix("x").strip()
+        if not text:
+            return self._default_leverage()
+        value = _as_int(text, -1)
+        return value if value in options else None
+
+    def _market_rows(self, day: str) -> list[list]:
+        rows: list[list] = []
+        for name, base in self._assets():
+            rate = self._rate(name, day)
+            percent = rate * 100
+            rows.append([
+                name,
+                f"{base:g}",
+                (f"+{percent:.2f}%" if percent >= 0 else f"{percent:.2f}%", "pos" if percent >= 0 else "neg"),
+                f"{base * (1 + rate):.2f}",
+            ])
+        return rows
+
+    async def _card_result(self, event, title, subtitle, sections, footer, fallback_text):
+        """优先渲染图片卡片，失败时依次回落到文转图、纯文本。"""
+        render = getattr(self, "html_render", None)
+        if render:
+            try:
+                url = await render(
+                    _build_card_html(title, subtitle, sections, footer),
+                    {},
+                    options={"full_page": True, "type": "png"},
+                )
+                if url:
+                    return event.image_result(url)
+            except Exception as e:  # 未配置文转图/Playwright 时常见
+                logger.warning(f"LimitUsePlugin: 卡片渲染失败，尝试回落 ({e})")
+
+        text_image = getattr(self, "text_to_image", None)
+        if text_image:
+            try:
+                url = await text_image(fallback_text)
+                if url:
+                    return event.image_result(url)
+            except Exception as e:
+                logger.warning(f"LimitUsePlugin: 文转图失败，回落纯文本 ({e})")
+
+        return event.plain_result(fallback_text)
+
+    async def _invest_brief_result(self, event, user_id: str, today: str):
+        """/投资 不带参数：今日行情 + 余额与今日状态 + 用法。"""
+        quota = await self._get_quota()
+        balance = quota.get(user_id, self.config["default_quota"])
+        daily = await self._get_invest_daily()
+        invested = daily.get(user_id) == today
+        options = self._leverage_options()
+        lev_text = "、".join(f"{value}x" for value in options)
+        usage = f"用法：/投资 原石 做多 10 {options[0]}x　杠杆可选 {lev_text}"
+
+        sections = [
+            {"type": "table", "headers": ["币种", "基准价", "今日涨跌", "现价"], "rows": self._market_rows(today)},
+            {"type": "kv", "items": [
+                ("我的余额", f"{balance} 次"),
+                ("今日投资", "已投资（明天再来）" if invested else "未投资"),
+            ]},
+            {"type": "note", "text": usage},
+        ]
+        fallback_lines = [
+            f"📈 今日行情 · {today}",
+            *[f"{row[0]}：基准{row[1]}　涨跌{row[2][0]}　现价{row[3]}" for row in self._market_rows(today)],
+            f"我的余额：{balance} 次　今日投资：{'已投资' if invested else '未投资'}",
+            usage,
+            "模拟行情，仅供娱乐",
+        ]
+        return await self._card_result(
+            event,
+            "📈 今日行情",
+            today,
+            sections,
+            "模拟行情，仅供娱乐",
+            "\n".join(fallback_lines),
+        )
 
     # ══════════════════════════════════════════════
     #  LLM 请求钩子 —— 扣减次数
@@ -313,6 +603,145 @@ class LimitUsePlugin(Star):
         reply = self.config["signin_reply"].replace("{bonus}", str(bonus))
         yield event.plain_result(reply)
 
+    @filter.command("投资")
+    async def invest(
+        self,
+        event: AstrMessageEvent,
+        asset: str = "",
+        direction: str = "",
+        stake: str = "",
+        leverage: str = "",
+    ):
+        """模拟行情，用对话次数做多/做空（每日 1 次）"""
+        if not self.config.get("invest_enabled", True):
+            yield event.plain_result("投资模式已关闭，请联系管理员开启哦～")
+            return
+
+        user_id = event.get_sender_id()
+        today = datetime.date.today().isoformat()
+        assets = self._assets()
+        names = [name for name, _ in assets]
+        asset = str(asset or "").strip()
+
+        if not asset:
+            yield await self._invest_brief_result(event, user_id, today)
+            return
+
+        if asset not in names:
+            yield event.plain_result(f"没有「{asset}」这个币种哦，可选：{'、'.join(names)}")
+            return
+
+        side = _normalize_direction(direction)
+        if side is None:
+            yield event.plain_result("方向要写「做多」或「做空」（也支持 long/short）哦～")
+            return
+
+        stake_value = _as_int(stake, -1)
+        if stake_value <= 0:
+            yield event.plain_result("投入次数要是正整数哦，比如 /投资 原石 做多 10 5x")
+            return
+
+        max_stake = _as_int(self.config.get("invest_max_stake", 0), 0)
+        if max_stake > 0 and stake_value > max_stake:
+            yield event.plain_result(f"单次最多投入 {max_stake} 次哦～")
+            return
+
+        options = self._leverage_options()
+        lev = self._resolve_leverage(leverage, options)
+        if lev is None:
+            yield event.plain_result(f"杠杆只能选 {'、'.join(f'{o}x' for o in options)} 哦～")
+            return
+
+        base = dict(assets)[asset]
+        nickname = getattr(event, "get_sender_name", lambda: user_id)()
+        reasons = {"already": False, "empty": False, "stake": False}
+
+        async with self._kv_lock:
+            quota = await self._get_quota()
+            balance = quota.get(user_id, self.config["default_quota"])
+            daily = await self._get_invest_daily()
+            if daily.get(user_id) == today:
+                reasons["already"] = True
+            elif balance <= 0:
+                reasons["empty"] = True
+            elif stake_value > balance:
+                reasons["stake"] = True
+            else:
+                rate = self._rate(asset, today)
+                fee = int(round(stake_value * self._fee_percent() / 100))
+                change = 1 if side == "long" else -1
+                pnl = int(round(stake_value * lev * rate * change)) - fee
+                after = max(0, balance + pnl)
+                quota[user_id] = after
+                await self._save_quota(quota)
+                daily[user_id] = today
+                await self._save_invest_daily(daily)
+
+                entry = {
+                    "time": datetime.datetime.now().isoformat(timespec="seconds"),
+                    "date": today,
+                    "user_id": user_id,
+                    "nickname": nickname,
+                    "asset": asset,
+                    "direction": "做多" if side == "long" else "做空",
+                    "leverage": lev,
+                    "stake": stake_value,
+                    "rate": rate,
+                    "price": round(base * (1 + rate), 2),
+                    "fee": fee,
+                    "pnl": pnl,
+                    "balance_before": balance,
+                    "balance_after": after,
+                }
+                history = await self._get_invest_history()
+                history.append(entry)
+                limit = max(1, _as_int(self.config.get("invest_history_limit", 200), 200))
+                if len(history) > limit:
+                    history = history[-limit:]
+                await self._save_invest_history(history)
+
+        if reasons["already"]:
+            yield event.plain_result("你今天已经投资过啦，明天再来吧(｡•ᴗ•｡)")
+            return
+        if reasons["empty"]:
+            yield event.plain_result("你的余额是 0 次啦，先 /签到 再来投资吧～")
+            return
+        if reasons["stake"]:
+            yield event.plain_result(f"投入不能超过当前余额（{balance} 次）哦～")
+            return
+
+        percent = rate * 100
+        direction_text = "做多" if side == "long" else "做空"
+        sections = [
+            {"type": "kv", "items": [
+                ("玩家", nickname),
+                ("方向", f"{direction_text} · {lev}x"),
+                ("投入", f"{stake_value} 次"),
+                ("今日行情", f"{asset} {'+' if percent >= 0 else ''}{percent:.2f}%"),
+                ("现价", f"{base * (1 + rate):.2f}（基准 {base:g}）"),
+                ("手续费", f"{fee} 次"),
+            ]},
+            {"type": "kv", "items": [
+                ("盈亏", f"{pnl:+d} 次", "pos" if pnl >= 0 else "neg"),
+                ("余额", f"{balance} → {after} 次"),
+            ]},
+        ]
+        fallback = "\n".join([
+            f"📈 {asset} 投资结算",
+            f"{nickname}：{direction_text} {stake_value} 次 × {lev}x",
+            f"行情 {percent:+.2f}%　盈亏 {pnl:+d} 次　手续费 {fee} 次",
+            f"余额：{balance} → {after}",
+            "模拟行情，仅供娱乐",
+        ])
+        yield await self._card_result(
+            event,
+            f"📈 {asset} 投资结算",
+            f"{direction_text} · {lev}x",
+            sections,
+            "模拟行情，仅供娱乐",
+            fallback,
+        )
+
     @filter.command("我的余额")
     async def query_quota(self, event: AstrMessageEvent):
         user_id = event.get_sender_id()
@@ -338,13 +767,33 @@ class LimitUsePlugin(Star):
 
     @filter.command("帮助")
     async def help_cmd(self, event: AstrMessageEvent):
-        msg = (
-            "📋 **可用指令列表**\n\n"
-            "├ /帮助 — 显示本菜单\n"
-            "├ /签到 — 每日签到获取对话次数\n"
-            "└ /我的余额 — 查看剩余对话次数"
+        """显示插件指令菜单（图片，失败回落文本）"""
+        sections = [
+            {"type": "table", "headers": ["指令", "说明"], "rows": [
+                ("/帮助", "显示本菜单"),
+                ("/签到", "每日签到获取对话次数"),
+                ("/我的余额", "查看剩余对话次数"),
+                ("/投资", "模拟行情投资对话次数（每日 1 次）"),
+            ]},
+            {"type": "note", "text": "投资用法：/投资 原石 做多 10 5x（方向支持 做多/做空、long/short）"},
+            {"type": "note", "text": "次数用完后会被拦截；签到或投资都可以补充次数。"},
+        ]
+        fallback = "\n".join([
+            f"📋 {PLUGIN_DISPLAY_NAME} {PLUGIN_VERSION} 可用指令",
+            "├ /帮助 — 显示本菜单",
+            "├ /签到 — 每日签到获取对话次数",
+            "├ /我的余额 — 查看剩余对话次数",
+            "└ /投资 — 模拟行情投资对话次数（每日 1 次）",
+            "投资用法：/投资 原石 做多 10 5x",
+        ])
+        yield await self._card_result(
+            event,
+            f"📋 {PLUGIN_DISPLAY_NAME}",
+            f"{PLUGIN_VERSION} · 指令菜单",
+            sections,
+            "模拟行情，仅供娱乐",
+            fallback,
         )
-        yield event.plain_result(msg)
 
     # ══════════════════════════════════════════════
     #  Web API
@@ -438,6 +887,12 @@ class LimitUsePlugin(Star):
             "user_id": user_id,
             "remark": remarks.get(user_id, ""),
         })
+
+    async def api_get_investments(self):
+        """返回投资记录（最新在前）"""
+        async with self._kv_lock:
+            history = await self._get_invest_history()
+        return json_response({"investments": list(reversed(history))})
 
     # ══════════════════════════════════════════════
     #  定时任务 —— 每天0点写入 Token 日报日志

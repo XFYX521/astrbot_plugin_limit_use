@@ -13,6 +13,7 @@ import sys
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -64,6 +65,13 @@ class _FakeStar:
 
     async def put_kv_data(self, key, value):
         self._kv[key] = copy.deepcopy(value)
+
+    # 离线环境没有文转图/Playwright，渲染必然失败，用于验证回落链
+    async def html_render(self, tmpl, data, options=None):
+        raise RuntimeError("html_render unavailable in tests")
+
+    async def text_to_image(self, text, return_url=True):
+        raise RuntimeError("text_to_image unavailable in tests")
 
 
 class _FakeRequest:
@@ -122,16 +130,23 @@ def load_schema_defaults() -> dict:
 
 
 class FakeEvent:
-    def __init__(self, user_id="10001"):
+    def __init__(self, user_id="10001", nickname="测试用户"):
         self._user_id = user_id
+        self._nickname = nickname
         self.sent = []
         self.stopped = False
 
     def get_sender_id(self):
         return self._user_id
 
+    def get_sender_name(self):
+        return self._nickname
+
     def plain_result(self, text):
         return ("plain", text)
+
+    def image_result(self, url):
+        return ("image", url)
 
     async def send(self, result):
         self.sent.append(result)
@@ -373,6 +388,178 @@ class VersionRegistryTest(unittest.TestCase):
             self.assertRegex(release["version"], r"^v\d+\.\d+\.\d+$")
         # 根级不能出现数组值（前端 getPluginCollections 会遍历所有键）
         self.assertEqual([k for k, v in self.data.items() if isinstance(v, list)], [])
+
+
+class InvestAssetsTest(unittest.TestCase):
+    def test_schema_default_assets(self):
+        assets = main._parse_invest_assets(load_schema_defaults()["invest_assets"])
+        self.assertEqual([name for name, _ in assets], ["原石", "菲林", "水晶", "星琼"])
+        self.assertEqual([price for _, price in assets], [160.0, 100.0, 280.0, 160.0])
+
+    def test_literal_backslash_n_and_invalid_lines(self):
+        raw = "原石:160\\n坏行\\n菲林:0\\n水晶:abc\\n星琼:120\\n星琼:999"
+        self.assertEqual(
+            main._parse_invest_assets(raw),
+            [("原石", 160.0), ("星琼", 120.0)],
+        )
+
+    def test_garbage_falls_back_to_default_assets(self):
+        plugin = make_plugin(invest_assets="完全不是配置")
+        self.assertEqual([name for name, _ in plugin._assets()], ["原石", "菲林", "水晶", "星琼"])
+
+    def test_leverage_options(self):
+        self.assertEqual(main._parse_leverage_options("2, 5x，10"), [2, 5, 10])
+        self.assertEqual(main._parse_leverage_options("bad"), [])
+        self.assertEqual(make_plugin(invest_leverage_options="bad")._leverage_options(), [2, 5])
+
+
+class MovingRateTest(unittest.TestCase):
+    def test_same_day_same_asset_is_deterministic(self):
+        first = main._moving_rate("原石", "2026-10-31", 3)
+        second = main._moving_rate("原石", "2026-10-31", 3)
+        self.assertEqual(first, second)
+
+    def test_rate_within_configured_volatility(self):
+        for day in ("2026-10-01", "2026-10-02", "2026-10-03"):
+            for asset in ("原石", "菲林", "水晶", "星琼"):
+                rate = main._moving_rate(asset, day, 3)
+                self.assertGreaterEqual(rate, -0.03)
+                self.assertLessEqual(rate, 0.03)
+
+    def test_zero_volatility_is_flat(self):
+        self.assertEqual(main._moving_rate("原石", "2026-10-31", 0), 0.0)
+
+
+class InvestCommandTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self._rate_mock = mock.Mock(return_value=0.02)
+        self._rate_patch = mock.patch.object(main, "_moving_rate", self._rate_mock)
+        self._rate_patch.start()
+        self.addCleanup(self._rate_patch.stop)
+
+    async def test_long_profit_and_fee(self):
+        plugin = make_plugin()
+        await plugin.put_kv_data("user_quota", {"10001": 100})
+        event = FakeEvent()
+        replies = await collect(plugin.invest(event, "原石", "做多", "100", "5x"))
+
+        # 100 次 × 5x × 2% = 10 次毛利；手续费 100×1% = 1 次
+        self.assertEqual(len(replies), 1)
+        self.assertIn("+9", replies[0][1])  # 无文转图环境回落纯文本
+        quota = await plugin._get_quota()
+        self.assertEqual(quota["10001"], 109)
+        history = await plugin._get_invest_history()
+        self.assertEqual(history[-1]["pnl"], 9)
+        self.assertEqual(history[-1]["fee"], 1)
+        self.assertEqual(history[-1]["direction"], "做多")
+        daily = await plugin._get_invest_daily()
+        self.assertEqual(daily["10001"], datetime.date.today().isoformat())
+
+    async def test_short_default_leverage(self):
+        plugin = make_plugin()
+        await plugin.put_kv_data("user_quota", {"10001": 100})
+        event = FakeEvent()
+        await collect(plugin.invest(event, "菲林", "short", "100"))
+
+        # 做空时行情 +2% 记为 -2%：100×2x×(-2%) = -4 次，手续费 1 次
+        quota = await plugin._get_quota()
+        self.assertEqual(quota["10001"], 95)
+        history = await plugin._get_invest_history()
+        self.assertEqual(history[-1]["leverage"], 2)
+        self.assertEqual(history[-1]["direction"], "做空")
+
+    async def test_loss_is_clamped_to_zero(self):
+        self._rate_mock.return_value = -0.5
+        plugin = make_plugin()
+        await plugin.put_kv_data("user_quota", {"10001": 20})
+        event = FakeEvent()
+        await collect(plugin.invest(event, "原石", "做多", "20", "5x"))
+
+        # 20×5×(-50%) = -50 次，手续费 0 次：余额最多亏到 0
+        quota = await plugin._get_quota()
+        self.assertEqual(quota["10001"], 0)
+        history = await plugin._get_invest_history()
+        self.assertEqual(history[-1]["pnl"], -50)
+        self.assertEqual(history[-1]["balance_after"], 0)
+
+    async def test_daily_limit_and_insufficient_balance(self):
+        plugin = make_plugin()
+        await plugin.put_kv_data("user_quota", {"10001": 100})
+        first = await collect(plugin.invest(FakeEvent(), "原石", "做多", "10"))
+        self.assertEqual(len(first), 1)
+
+        second = await collect(plugin.invest(FakeEvent(), "原石", "做多", "10"))
+        self.assertIn("已经投资过", second[0][1])
+        self.assertEqual(len(await plugin._get_invest_history()), 1)
+
+        plugin2 = make_plugin()
+        await plugin2.put_kv_data("user_quota", {"10001": 5})
+        too_much = await collect(plugin2.invest(FakeEvent(), "原石", "做多", "10"))
+        self.assertIn("不能超过当前余额", too_much[0][1])
+        self.assertEqual(await plugin2._get_invest_history(), [])
+
+    async def test_disabled_and_bad_params(self):
+        plugin = make_plugin(invest_enabled=False)
+        disabled = await collect(plugin.invest(FakeEvent(), "原石", "做多", "10"))
+        self.assertIn("已关闭", disabled[0][1])
+
+        plugin = make_plugin()
+        await plugin.put_kv_data("user_quota", {"10001": 100})
+        bad_asset = await collect(plugin.invest(FakeEvent(), "钻石", "做多", "10"))
+        self.assertIn("没有「钻石」", bad_asset[0][1])
+        bad_dir = await collect(plugin.invest(FakeEvent(), "原石", "乱写", "10"))
+        self.assertIn("做多", bad_dir[0][1])
+        bad_lev = await collect(plugin.invest(FakeEvent(), "原石", "做多", "10", "9x"))
+        self.assertIn("杠杆", bad_lev[0][1])
+        bad_stake = await collect(plugin.invest(FakeEvent(), "原石", "做多", "0"))
+        self.assertIn("正整数", bad_stake[0][1])
+
+
+class CardFallbackTest(unittest.IsolatedAsyncioTestCase):
+    async def test_help_card_falls_back_to_text(self):
+        plugin = make_plugin()
+        replies = await collect(plugin.help_cmd(FakeEvent()))
+        text = replies[0][1]
+        self.assertEqual(replies[0][0], "plain")
+        self.assertIn(main.PLUGIN_VERSION, text)
+        self.assertIn("/投资", text)
+        # 管理员指令仍不对外展示
+        self.assertNotIn("查看全部余额", text)
+
+    async def test_invest_brief_contains_market_and_balance(self):
+        plugin = make_plugin()
+        await plugin.put_kv_data("user_quota", {"10001": 7})
+        replies = await collect(plugin.invest(FakeEvent()))
+        text = replies[0][1]
+        self.assertIn("今日行情", text)
+        self.assertIn("我的余额：7 次", text)
+        self.assertIn("未投资", text)
+
+    def test_card_html_escapes_user_content(self):
+        html = main._build_card_html(
+            "<script>alert(1)</script>",
+            "副标题 & 符号",
+            [
+                {"type": "kv", "items": [("昵称", "<img src=x onerror=1>")]},
+                {"type": "table", "headers": ["<b>"], "rows": [["<i>"]]},
+            ],
+            "尾巴",
+        )
+        self.assertNotIn("<script>", html)
+        self.assertNotIn("<img src=x", html)
+        self.assertIn("&lt;script&gt;", html)
+        self.assertIn("&amp;", html)
+
+
+class InvestApiTest(unittest.IsolatedAsyncioTestCase):
+    async def test_get_investments_returns_latest_first(self):
+        plugin = make_plugin()
+        await plugin.put_kv_data("invest_history", [
+            {"time": "2026-10-30T10:00:00", "asset": "原石"},
+            {"time": "2026-10-31T10:00:00", "asset": "星琼"},
+        ])
+        result = await plugin.api_get_investments()
+        self.assertEqual([item["asset"] for item in result["investments"]], ["星琼", "原石"])
 
 
 if __name__ == "__main__":

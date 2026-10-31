@@ -1,5 +1,16 @@
 # 更新日志
 
+## v1.0.18
+
+- ✨ 新增 `/投资`（投资模式）：用对话次数做多/做空，保证金交易结算，每日限 1 次
+- ✨ 行情为「日期+币种」确定性随机（同一天同一币种结果固定，不可刷），默认币种：原石/菲林/水晶/星琼
+- ✨ 支持 2x/5x 杠杆、1% 手续费，亏损最多亏到余额为 0；中文参数（做多/做空）并兼容 long/short
+- ✨ `/投资` 不带参数返回今日行情图；`/投资 原石 做多 10 5x` 返回结算卡片图
+- ✨ `/帮助` 改为浅色卡片图（含插件名与版本号），渲染失败自动回落文本；仍不显示管理员指令
+- ✨ WebUI 新增「投资记录」表，提供只读接口 `GET /astrbot_plugin_limit_use/investments`
+- 🔧 新增配置项：`invest_enabled`、`invest_assets`、`invest_volatility`、`invest_fee_percent`、`invest_leverage_options`、`invest_default_leverage`、`invest_max_stake`、`invest_history_limit`
+- 🐛 卡片中的昵称、币种等用户内容统一做 HTML 转义，避免注入
+
 ## v1.0.17
 
 - 🐛 修复 weighted 签到在默认配置下恒得 0 次：`signin_weights` 默认值此前是字面量 `\n` 而非换行
