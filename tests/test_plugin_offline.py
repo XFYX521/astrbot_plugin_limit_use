@@ -688,5 +688,44 @@ class InvestApiTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([item["asset"] for item in result["investments"]], ["星琼", "原石"])
 
 
+class ClearAllTest(unittest.IsolatedAsyncioTestCase):
+    async def test_clear_all_resets_every_data_key(self):
+        plugin = make_plugin()
+        await plugin.put_kv_data("user_quota", {"10001": 9})
+        await plugin.put_kv_data("user_signin", {"10001": "2026-10-31"})
+        await plugin.put_kv_data("user_total_usage", {"10001": 3})
+        await plugin.put_kv_data("user_profiles", {"10001": {"name": "小明"}})
+        await plugin.put_kv_data("user_total_tokens", {"10001": 100})
+        await plugin.put_kv_data("user_daily_tokens", {"10001": {"2026-10-31": 10}})
+        await plugin.put_kv_data("token_daily_log", {"2026-10-30": {"10001": 5}})
+        await plugin.put_kv_data("user_daily_usage", {"10001": {"2026-10-31": 1}})
+        await plugin.put_kv_data("invest_daily", {"10001": "2026-10-31"})
+        await plugin.put_kv_data("invest_history", [{"user_id": "10001", "pnl": 2}])
+        await plugin.put_kv_data("user_remarks", {"10001": "旧备注"})
+
+        result = await plugin.api_clear_all()
+        self.assertTrue(result["ok"])
+        self.assertIn("user_quota", result["cleared"])
+
+        expected_dict_keys = [
+            "user_quota", "user_signin", "user_total_usage", "user_profiles",
+            "user_total_tokens", "user_daily_tokens", "token_daily_log",
+            "user_daily_usage", "invest_daily", "user_remarks",
+        ]
+        for key in expected_dict_keys:
+            self.assertEqual(await plugin.get_kv_data(key, None), {}, key)
+        self.assertEqual(await plugin.get_kv_data("invest_history", None), [])
+
+    async def test_clear_all_then_views_are_empty(self):
+        plugin = make_plugin()
+        await plugin.put_kv_data("user_quota", {"10001": 9})
+        await plugin.api_clear_all()
+
+        users = await plugin.api_get_users()
+        self.assertEqual(users["users"], [])
+        investments = await plugin.api_get_investments()
+        self.assertEqual(investments["investments"], [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

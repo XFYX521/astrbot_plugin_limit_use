@@ -21,7 +21,7 @@ except ImportError:  # 旧版没有该模块时退回 quart（保持插件可加
 
 PLUGIN_NAME = "astrbot_plugin_limit_use"
 PLUGIN_DISPLAY_NAME = "对话次数限制"
-PLUGIN_VERSION = "v2.1.0"
+PLUGIN_VERSION = "v2.1.1"
 
 # 投资币种默认值（配置解析失败时兜底），基准价只用于展示现价
 DEFAULT_ASSETS: list[tuple[str, float]] = [
@@ -286,6 +286,12 @@ class LimitUsePlugin(Star):
                 self.api_get_market,
                 ["GET"],
                 "获取今日行情",
+            )
+            context.register_web_api(
+                f"/{PLUGIN_NAME}/clear_all",
+                self.api_clear_all,
+                ["POST", "GET"],
+                "清空全部运行数据",
             )
             logger.info("LimitUsePlugin: Web API 已注册")
         except Exception as e:
@@ -929,6 +935,28 @@ class LimitUsePlugin(Star):
         async with self._kv_lock:
             history = await self._get_invest_history()
         return json_response({"investments": list(reversed(history))})
+
+    async def api_clear_all(self):
+        """清空全部运行数据：额度、签到、调用统计、Token、投资记录与昵称档案"""
+        empty: dict = {
+            "user_quota": {},
+            "user_signin": {},
+            "user_total_usage": {},
+            "user_profiles": {},
+            "user_total_tokens": {},
+            "user_daily_tokens": {},
+            "token_daily_log": {},
+            "user_daily_usage": {},
+            "invest_daily": {},
+            "invest_history": [],
+        }
+        async with self._kv_lock:
+            for key, value in empty.items():
+                await self.put_kv_data(key, value)
+            # 兼容旧版本遗留的备注数据
+            await self.put_kv_data("user_remarks", {})
+        logger.info("LimitUsePlugin: 全部用户数据已清空")
+        return json_response({"ok": True, "cleared": list(empty.keys())})
 
     async def api_get_market(self):
         """返回今日行情与投资参数（供 WebUI 行情页使用）"""

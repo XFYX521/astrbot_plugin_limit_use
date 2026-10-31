@@ -90,10 +90,33 @@
     .neg { color: var(--neg); }
     .muted { color: var(--muted); }
 
-    .stepper { display: inline-flex; align-items: center; gap: 4px; }
-    .stepper button { width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--text); cursor: pointer; font-size: 12px; font-weight: 700; }
-    .stepper button:hover { border-color: var(--primary); color: var(--primary); }
-    .stepper .val { min-width: 34px; text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .qty {
+      width: 84px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 7px;
+      background: var(--bg); color: var(--text); font-size: 13px; font-weight: 700;
+      text-align: center; font-variant-numeric: tabular-nums; outline: none;
+    }
+    .qty:focus { border-color: var(--primary); background: var(--card); }
+    .qty.saving { opacity: 0.6; }
+
+    .danger { margin-top: 16px; border-color: var(--neg); }
+    .danger .panel-head .title { color: var(--neg); }
+    .btn-danger { border-color: var(--neg); color: var(--neg); }
+    .btn-danger:hover { background: var(--neg); color: #fff; border-color: var(--neg); }
+    .btn-primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .btn-primary:hover { filter: brightness(1.05); color: #fff; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .modal-mask {
+      position: fixed; inset: 0; z-index: 90; background: rgba(15, 18, 30, 0.5);
+      display: flex; align-items: center; justify-content: center; padding: 20px;
+    }
+    .modal-mask[hidden] { display: none; }
+    .modal { width: 100%; max-width: 420px; background: var(--card); border-radius: 12px; padding: 20px 22px; box-shadow: 0 12px 40px rgba(15, 18, 30, 0.25); }
+    .modal h3 { font-size: 16px; margin-bottom: 8px; }
+    .modal p { color: var(--muted); font-size: 13px; line-height: 1.7; }
+    .modal .modal-input { width: 100%; margin: 14px 0; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); font-size: 14px; outline: none; }
+    .modal .modal-input:focus { border-color: var(--neg); }
+    .modal .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
     .market { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 18px; }
     .asset { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; box-shadow: var(--shadow); position: relative; overflow: hidden; }
@@ -162,6 +185,18 @@
           <div id="groupWrap"><div class="empty">加载中…</div></div>
         </div>
       </section>
+
+      <section class="panel danger">
+        <div class="panel-head">
+          <span class="title">危险操作</span>
+          <div class="actions">
+            <button class="btn btn-danger" id="btnClearAll">清空全部数据</button>
+          </div>
+        </div>
+        <div style="padding: 12px 16px;" class="muted">
+          删除所有用户的额度、签到、调用统计、Token、投资记录与昵称档案，操作不可恢复。
+        </div>
+      </section>
     </section>
 
     <section class="view" id="view-invest" hidden>
@@ -181,6 +216,18 @@
   </div>
 
   <div class="toast" id="toast"></div>
+
+  <div class="modal-mask" id="clearModal" hidden>
+    <div class="modal">
+      <h3>清空全部数据</h3>
+      <p>将删除所有用户的额度、签到、调用统计、Token、投资记录与昵称档案，且无法恢复。<br />请输入「清空」以确认。</p>
+      <input class="modal-input" id="clearConfirmInput" placeholder="输入 清空" autocomplete="off" />
+      <div class="modal-actions">
+        <button class="btn" id="clearCancel">取消</button>
+        <button class="btn btn-danger" id="clearConfirm" disabled>确认清空</button>
+      </div>
+    </div>
+  </div>
 
   <script type="module">
     const bridge = window.AstrBotPluginView || window.AstrBotPluginPage;
@@ -296,18 +343,10 @@
         <td class="uid">${escapeHtml(u.user_id)}</td>
         <td>${escapeHtml(displayName || '—')}${u.is_admin ? ' <span class="muted">管理员</span>' : ''}</td>
         ${extra}
-        <td><div class="stepper">
-          <button data-delta="-10" title="-10">−</button>
-          <span class="val td-remain">${Number(u.remaining) || 0}</span>
-          <button data-delta="10" title="+10">＋</button>
-        </div></td>
+        <td><input class="qty td-remain" data-uid="${escapeAttr(u.user_id)}" value="${Number(u.remaining) || 0}" inputmode="numeric" autocomplete="off" /></td>
         <td class="num">${Number(u.today_used) || 0}</td>
         <td class="num">${Number(u.total_used) || 0}</td>
-        <td class="num">${fmtTokens(u.total_tokens)}</td>
-        <td><div class="stepper">
-          <button data-delta="-1">−1</button>
-          <button data-delta="1">+1</button>
-        </div></td>`;
+        <td class="num">${fmtTokens(u.total_tokens)}</td>`;
     }
 
     function renderUserTables() {
@@ -335,7 +374,7 @@
         ? `<table>
             <thead><tr>
               <th>QQ 号</th><th>昵称</th><th>最近私聊</th><th>剩余次数</th>
-              <th>今日调用</th><th>累积调用</th><th>累积 Token</th><th>调整</th>
+              <th>今日调用</th><th>累积调用</th><th>累积 Token</th>
             </tr></thead>
             <tbody>${privateRows}</tbody>
           </table>`
@@ -345,40 +384,76 @@
         ? `<table>
             <thead><tr>
               <th>QQ 号</th><th>昵称</th><th>群号</th><th>剩余次数</th>
-              <th>今日调用</th><th>累积调用</th><th>累积 Token</th><th>调整</th>
+              <th>今日调用</th><th>累积调用</th><th>累积 Token</th>
             </tr></thead>
             <tbody>${groupRows.join('')}</tbody>
           </table>`
         : `<div class="empty">${state.users.length ? '没有匹配的群聊记录' : '暂无群聊记录'}</div>`;
 
       [privateWrap, groupWrap].forEach((wrap) => {
-        wrap.querySelectorAll('[data-delta]').forEach((btn) => btn.addEventListener('click', () => adjustQuota(btn)));
+        wrap.querySelectorAll('.qty').forEach((input) => {
+          input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+            if (e.key === 'Escape') { e.preventDefault(); restoreQuotaInput(input); }
+          });
+          input.addEventListener('blur', () => saveQuota(input));
+        });
       });
     }
 
-    async function adjustQuota(btn) {
-      const tr = btn.closest('tr');
-      const uid = tr.dataset.uid;
-      const delta = Number(btn.dataset.delta);
-      const valEl = tr.querySelector('.td-remain');
-      const next = Math.max(0, (Number(valEl.textContent) || 0) + delta);
-      if (next === Number(valEl.textContent)) return;
-      btn.disabled = true;
+    function userQuota(u) {
+      return Number(u && u.remaining) || 0;
+    }
+
+    function syncQuotaInputs(uid, remaining) {
+      [privateWrap, groupWrap].forEach((wrap) => {
+        wrap.querySelectorAll(`.qty[data-uid="${CSS.escape(String(uid))}"]`).forEach((input) => {
+          input.value = remaining;
+        });
+      });
+    }
+
+    function restoreQuotaInput(input) {
+      const target = state.users.find((u) => String(u.user_id) === String(input.dataset.uid));
+      input.value = userQuota(target);
+    }
+
+    async function saveQuota(input) {
+      if (input.dataset.busy === '1') return;
+      const uid = input.dataset.uid;
+      const target = state.users.find((u) => String(u.user_id) === String(uid));
+      const current = userQuota(target);
+      const raw = String(input.value || '').trim();
+      if (!/^\d+$/.test(raw)) {
+        restoreQuotaInput(input);
+        toast('请输入 0 或正整数', true);
+        return;
+      }
+      const next = Number(raw);
+      if (!Number.isSafeInteger(next)) {
+        restoreQuotaInput(input);
+        toast('数字超出范围', true);
+        return;
+      }
+      if (next === current) {
+        restoreQuotaInput(input);
+        return;
+      }
+      input.dataset.busy = '1';
+      input.classList.add('saving');
       try {
         const res = await bridge.apiGet(`update/${uid}/${next}`);
-        const target = state.users.find((u) => String(u.user_id) === String(uid));
-        if (target) target.remaining = Number(res.remaining) || 0;
-        [privateWrap, groupWrap].forEach((wrap) => {
-          wrap.querySelectorAll(`tr[data-uid="${CSS.escape(String(uid))}"] .td-remain`).forEach((el) => {
-            el.textContent = res.remaining;
-          });
-        });
+        const remaining = Number(res.remaining);
+        if (target) target.remaining = remaining;
+        syncQuotaInputs(uid, remaining);
         renderUserStats();
         toast('已更新');
       } catch (e) {
+        restoreQuotaInput(input);
         toast(`操作失败：${e.message || e}`, true);
       } finally {
-        btn.disabled = false;
+        input.dataset.busy = '0';
+        input.classList.remove('saving');
       }
     }
 
@@ -481,6 +556,57 @@
       else { await loadInvest(); }
       toast('已刷新');
     }
+
+    async function postAction(name) {
+      if (typeof bridge.apiPost === 'function') return bridge.apiPost(name, {});
+      return bridge.apiGet(name);
+    }
+
+    const clearModal = $('clearModal');
+    const clearConfirmInput = $('clearConfirmInput');
+    const clearConfirm = $('clearConfirm');
+
+    function openClearModal() {
+      clearConfirmInput.value = '';
+      clearConfirm.disabled = true;
+      clearModal.hidden = false;
+      clearConfirmInput.focus();
+    }
+    function closeClearModal() {
+      clearModal.hidden = true;
+    }
+
+    async function clearAllData() {
+      clearConfirm.disabled = true;
+      try {
+        await postAction('clear_all');
+        closeClearModal();
+        state.users = [];
+        state.meta = { today_tokens_sum: 0, total_tokens_sum: 0 };
+        state.history = [];
+        state.usersLoaded = false;
+        state.investLoaded = false;
+        privateWrap.innerHTML = '<div class="empty">加载中…</div>';
+        groupWrap.innerHTML = '<div class="empty">加载中…</div>';
+        await loadUsers();
+        toast('全部数据已清空');
+      } catch (e) {
+        clearConfirm.disabled = clearConfirmInput.value.trim() !== '清空';
+        toast(`清空失败：${e.message || e}`, true);
+      }
+    }
+
+    $('btnClearAll').addEventListener('click', openClearModal);
+    $('clearCancel').addEventListener('click', closeClearModal);
+    clearModal.addEventListener('click', (e) => { if (e.target === clearModal) closeClearModal(); });
+    clearConfirmInput.addEventListener('input', () => {
+      clearConfirm.disabled = clearConfirmInput.value.trim() !== '清空';
+    });
+    clearConfirmInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && clearConfirmInput.value.trim() === '清空') clearAllData();
+      if (e.key === 'Escape') closeClearModal();
+    });
+    clearConfirm.addEventListener('click', clearAllData);
 
     document.querySelectorAll('.tab').forEach((tab) => {
       tab.addEventListener('click', () => setView(tab.dataset.view));
