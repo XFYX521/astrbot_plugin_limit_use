@@ -2,12 +2,25 @@
   "$meta": {
     "schema_version": 1,
     "name": "XFYX521 插件源",
-    "version": "2026-10-31T20:59:08+08:00",
+    "version": "2026-10-31T21:17:08+08:00",
     "homepage": "https://github.com/XFYX521/astrbot_plugin_limit_use",
     "repository": "https://github.com/XFYX521/astrbot_plugin_limit_use",
     "description": "XFYX521 的 AstrBot 插件源，提供对话次数限制插件的更新检测",
     "updated_at": "2026-10-31T00:00:00Z",
     "releases": [
+      {
+        "version": "v2.0.1",
+        "date": "2026-10-31",
+        "commit": "c1932265a185af214232074d9d6b5025882ac089",
+        "tag": "v2.0.1",
+        "zip_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v2.0.1.zip",
+        "changes": [
+          "🐛 修复 WebUI 只能看到「行情与投资」、无法切到「用户管理」：AstrBot 侧边栏默认扁平模式下每个插件只显示第一个视图",
+          "🎨 两个视图合并为单个 `views/manage/`，页内用标签「用户管理 / 行情与投资」切换（`#users` / `#invest` 记入 URL）",
+          "📝 README 补充说明：为什么只提供一个视图，以及页面入口在「插件详情 → 打开页面」"
+        ],
+        "note": null
+      },
       {
         "version": "v2.0.0",
         "date": "2026-10-31",
@@ -302,7 +315,7 @@
   "XFYX521/astrbot_plugin_limit_use": {
     "author": "XFYX521",
     "name": "astrbot_plugin_limit_use",
-    "version": "v2.0.0",
+    "version": "v2.0.1",
     "repo": "https://github.com/XFYX521/astrbot_plugin_limit_use",
     "desc": "给 QQ 用户设置对话次数额度，次数用完后需签到补充；支持按余额百分比模拟行情投资。",
     "short_desc": "按用户限制对话次数，额度用完后签到补充。",
@@ -317,7 +330,7 @@
       "aiocqhttp"
     ],
     "astrbot_version": ">=4.29.0,<5",
-    "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v2.0.0.zip",
+    "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v2.0.1.zip",
     "updated_at": "2026-10-31T00:00:00Z"
   }
 }
