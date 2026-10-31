@@ -1,8 +1,21 @@
+import asyncio
 import datetime
 import random
-from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.star import Context, Star, register
-from astrbot.api import logger, AstrBotConfig
+
+from astrbot.api import AstrBotConfig, logger
+from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.star import Context, Star
+
+try:  # 新版 AstrBot 官方 Web API
+    from astrbot.api.web import error_response, json_response, request
+except ImportError:  # 旧版没有该模块时退回 quart（保持插件可加载）
+    from quart import jsonify, request
+
+    def json_response(data):
+        return jsonify(data)
+
+    def error_response(message, status_code=400):
+        return jsonify({"error": message}), status_code
 
 PLUGIN_NAME = "astrbot_plugin_limit_use"
 
@@ -14,6 +27,43 @@ def _get_attr(obj, attr, default=0):
     if isinstance(obj, dict):
         return obj.get(attr, default) or default
     return getattr(obj, attr, default) or default
+
+
+def _as_int(value, default: int = 0) -> int:
+    """尽量转成 int，失败时返回默认值（防 WebUI 填入非法字符串）。"""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _parse_signin_weights(raw) -> tuple[list[int], list[int]]:
+    """解析“每行 值:权重”的签到权重配置。
+
+    兼容历史默认值中写坏的字面量 ``\\n``（反斜杠 + n，而不是真换行），
+    也接受真实换行、CRLF。权重 <= 0 或格式错误的行会被跳过。
+    """
+    text = str(raw or "")
+    text = text.replace("\\r\\n", "\n").replace("\\n", "\n")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    values: list[int] = []
+    weights: list[int] = []
+    for line in text.split("\n"):
+        line = line.strip()
+        if not line or ":" not in line:
+            continue
+        left, _, right = line.partition(":")
+        try:
+            value = int(left.strip())
+            weight = int(right.strip())
+        except (TypeError, ValueError):
+            continue
+        if weight <= 0:
+            continue
+        values.append(value)
+        weights.append(weight)
+    return values, weights
 
 
 def _extract_tokens(resp) -> int:
@@ -51,16 +101,12 @@ def _extract_tokens(resp) -> int:
     return 0
 
 
-@register(
-    PLUGIN_NAME,
-    "XFYX521",
-    "给QQ用户设置对话次数额度，用完需签到补充。",
-    "1.0.6",
-)
 class LimitUsePlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
         self.config = config
+        # 串行化 KV 读-改-写，避免同一用户并发消息时丢次数/漏记
+        self._kv_lock = asyncio.Lock()
 
         # ── Web API ──
         try:
@@ -90,7 +136,6 @@ class LimitUsePlugin(Star):
 
     async def initialize(self):
         """插件初始化后启动定时日志任务"""
-        import asyncio
         self._log_task = asyncio.create_task(self._daily_log_loop())
         logger.info("LimitUsePlugin: Token 日报定时任务已启动")
 
@@ -160,6 +205,20 @@ class LimitUsePlugin(Star):
         await self._save_daily_usage(daily)
 
     # ══════════════════════════════════════════════
+    #  工具方法
+    # ══════════════════════════════════════════════
+
+    def _is_admin(self, user_id: str) -> bool:
+        return user_id in (self.config.get("admin_users") or [])
+
+    async def _bump_usage(self, user_id: str):
+        """累积调用 +1，并记录今日调用。调用方需持有 self._kv_lock。"""
+        usage = await self._get_total_usage()
+        usage[user_id] = usage.get(user_id, 0) + 1
+        await self._save_total_usage(usage)
+        await self._record_daily_usage(user_id)
+
+    # ══════════════════════════════════════════════
     #  LLM 请求钩子 —— 扣减次数
     # ══════════════════════════════════════════════
 
@@ -167,33 +226,24 @@ class LimitUsePlugin(Star):
     async def on_llm_req(self, event: AstrMessageEvent, req: "ProviderRequest"):
         user_id = event.get_sender_id()
 
-        admin_list = self.config.get("admin_users", [])
-        if user_id in admin_list:
+        if self._is_admin(user_id):
             # 管理员不扣次数，但仍记录累积调用
-            usage = await self._get_total_usage()
-            usage[user_id] = usage.get(user_id, 0) + 1
-            await self._save_total_usage(usage)
-            # 记录今日调用
-            await self._record_daily_usage(user_id)
+            async with self._kv_lock:
+                await self._bump_usage(user_id)
             return
 
-        quota = await self._get_quota()
-        remain = quota.get(user_id, self.config["default_quota"])
+        async with self._kv_lock:
+            quota = await self._get_quota()
+            remain = quota.get(user_id, self.config["default_quota"])
+            allowed = remain > 0
+            if allowed:
+                quota[user_id] = remain - 1
+                await self._save_quota(quota)
+                await self._bump_usage(user_id)
 
-        if remain <= 0:
-            reply = self.config["limit_reply"]
-            await event.send(event.plain_result(reply))
+        if not allowed:
+            await event.send(event.plain_result(self.config["limit_reply"]))
             event.stop_event()
-            return
-
-        quota[user_id] = remain - 1
-        await self._save_quota(quota)
-
-        usage = await self._get_total_usage()
-        usage[user_id] = usage.get(user_id, 0) + 1
-        await self._save_total_usage(usage)
-        # 记录今日调用
-        await self._record_daily_usage(user_id)
 
     # ══════════════════════════════════════════════
     #  LLM 响应钩子 —— 记录 Token 消耗
@@ -209,54 +259,56 @@ class LimitUsePlugin(Star):
         user_id = event.get_sender_id()
         today = datetime.date.today().isoformat()
 
-        # 累积 token
-        total = await self._get_total_tokens()
-        total[user_id] = total.get(user_id, 0) + tokens
-        await self._save_total_tokens(total)
+        async with self._kv_lock:
+            # 累积 token
+            total = await self._get_total_tokens()
+            total[user_id] = total.get(user_id, 0) + tokens
+            await self._save_total_tokens(total)
 
-        # 当日 token
-        daily = await self._get_daily_tokens()
-        user_daily = daily.get(user_id, {})
-        user_daily[today] = user_daily.get(today, 0) + tokens
-        daily[user_id] = user_daily
-        await self._save_daily_tokens(daily)
+            # 当日 token
+            daily = await self._get_daily_tokens()
+            user_daily = daily.get(user_id, {})
+            user_daily[today] = user_daily.get(today, 0) + tokens
+            daily[user_id] = user_daily
+            await self._save_daily_tokens(daily)
 
     # ══════════════════════════════════════════════
     #  指令
     # ══════════════════════════════════════════════
+
+    def _roll_bonus(self) -> int:
+        """按 signin_mode 计算本次签到奖励；配置非法时回落到 range 模式。"""
+        if self.config.get("signin_mode", "range") == "weighted":
+            values, weights = _parse_signin_weights(self.config.get("signin_weights", ""))
+            if values:
+                return random.choices(values, weights=weights, k=1)[0]
+
+        low = _as_int(self.config.get("daily_bonus_min", 5), 5)
+        high = _as_int(self.config.get("daily_bonus_max", 5), 5)
+        return random.randint(min(low, high), max(low, high))
 
     @filter.command("签到")
     async def signin(self, event: AstrMessageEvent):
         user_id = event.get_sender_id()
         today = datetime.date.today().isoformat()
 
-        signin_records = await self._get_signin()
-        if signin_records.get(user_id) == today:
+        async with self._kv_lock:
+            signin_records = await self._get_signin()
+            already = signin_records.get(user_id) == today
+            bonus = 0
+            if not already:
+                bonus = self._roll_bonus()
+                quota = await self._get_quota()
+                current = quota.get(user_id, self.config["default_quota"])
+                quota[user_id] = max(0, current + bonus)
+                await self._save_quota(quota)
+
+                signin_records[user_id] = today
+                await self._save_signin(signin_records)
+
+        if already:
             yield event.plain_result("你今天已经签过到啦，明天再来吧(｡•ᴗ•｡)")
             return
-
-        mode = self.config.get("signin_mode", "range")
-        if mode == "weighted":
-            weights = self.config.get("signin_weights", {})
-            if weights:
-                vals, wgts = zip(*[(int(k), v) for k, v in weights.items()])
-                bonus = random.choices(vals, weights=wgts, k=1)[0]
-            else:
-                bonus = 0
-        else:
-            bonus_min = self.config["daily_bonus_min"]
-            bonus_max = self.config["daily_bonus_max"]
-            bonus = random.randint(
-                min(bonus_min, bonus_max),
-                max(bonus_min, bonus_max),
-            )
-        quota = await self._get_quota()
-        current = quota.get(user_id, self.config["default_quota"])
-        quota[user_id] = max(0, current + bonus)
-        await self._save_quota(quota)
-
-        signin_records[user_id] = today
-        await self._save_signin(signin_records)
 
         reply = self.config["signin_reply"].replace("{bonus}", str(bonus))
         yield event.plain_result(reply)
@@ -272,8 +324,7 @@ class LimitUsePlugin(Star):
     @filter.command("查看全部余额")
     async def view_all_quota(self, event: AstrMessageEvent):
         user_id = event.get_sender_id()
-        admin_list = self.config.get("admin_users", [])
-        if user_id not in admin_list:
+        if not self._is_admin(user_id):
             yield event.plain_result("你没有权限使用此指令哦(｡•ᴗ•｡)")
             return
         quota = await self._get_quota()
@@ -301,14 +352,16 @@ class LimitUsePlugin(Star):
 
     async def api_get_users(self):
         """返回所有用户的次数 + Token 数据"""
-        quota = await self._get_quota()
-        usage = await self._get_total_usage()
-        signin = await self._get_signin()
-        remarks = await self._get_remarks()
-        total_tokens = await self._get_total_tokens()
-        daily_tokens = await self._get_daily_tokens()
-        daily_usage = await self._get_daily_usage()
         today = datetime.date.today().isoformat()
+        # 锁内一次性读取，避免并发写入导致各 key 之间快照错位
+        async with self._kv_lock:
+            quota = await self._get_quota()
+            usage = await self._get_total_usage()
+            signin = await self._get_signin()
+            remarks = await self._get_remarks()
+            total_tokens = await self._get_total_tokens()
+            daily_tokens = await self._get_daily_tokens()
+            daily_usage = await self._get_daily_usage()
 
         all_uids = (
             set(quota.keys()) | set(usage.keys()) | set(signin.keys())
@@ -316,7 +369,7 @@ class LimitUsePlugin(Star):
             | set(daily_usage.keys())
         )
         if not all_uids:
-            return {"users": []}
+            return json_response({"users": []})
 
         today_tokens_sum = sum(
             d.get(today, 0) for d in daily_tokens.values()
@@ -341,39 +394,50 @@ class LimitUsePlugin(Star):
                 "avg_tokens_k": avg_k,
             })
 
-        return {
+        return json_response({
             "users": users,
             "today_tokens_sum": today_tokens_sum,
             "total_tokens_sum": total_tokens_sum,
-        }
+        })
 
     async def api_update_user(self, user_id: str, remaining: str):
-        quota = await self._get_quota()
-        quota[user_id] = max(0, int(remaining))
-        await self._save_quota(quota)
+        value = _as_int(remaining, -1)
+        if value < 0:
+            return error_response("remaining 必须是非负整数", status_code=400)
 
-        usage = await self._get_total_usage()
-        return {
+        async with self._kv_lock:
+            quota = await self._get_quota()
+            quota[user_id] = value
+            await self._save_quota(quota)
+            usage = await self._get_total_usage()
+
+        return json_response({
             "ok": True,
             "user_id": user_id,
-            "remaining": quota[user_id],
+            "remaining": value,
             "total_used": usage.get(user_id, 0),
-        }
+        })
 
     async def api_set_remark(self, user_id: str):
         try:
-            from quart import request as req
-            text = req.args.get("text", "")
-        except Exception:
-            text = ""
+            query = request.query  # 新版 astrbot.api.web 的 PluginMultiDict
+        except AttributeError:
+            query = request.args  # 旧版 quart 的 request
+        text = (query.get("text") or "").strip()
 
-        remarks = await self._get_remarks()
-        if not text:
-            remarks.pop(user_id, None)
-        else:
-            remarks[user_id] = text
-        await self._save_remarks(remarks)
-        return {"ok": True, "user_id": user_id, "remark": remarks.get(user_id, "")}
+        async with self._kv_lock:
+            remarks = await self._get_remarks()
+            if not text:
+                remarks.pop(user_id, None)
+            else:
+                remarks[user_id] = text
+            await self._save_remarks(remarks)
+
+        return json_response({
+            "ok": True,
+            "user_id": user_id,
+            "remark": remarks.get(user_id, ""),
+        })
 
     # ══════════════════════════════════════════════
     #  定时任务 —— 每天0点写入 Token 日报日志
@@ -381,7 +445,6 @@ class LimitUsePlugin(Star):
 
     async def _daily_log_loop(self):
         """每天0点写入前一天的 Token 消耗日志"""
-        import asyncio
         while True:
             now = datetime.datetime.now()
             next_midnight = (now + datetime.timedelta(days=1)).replace(
@@ -394,28 +457,35 @@ class LimitUsePlugin(Star):
     async def _log_yesterday_tokens(self):
         """将前一天的 Token 消耗存入 KV 存储"""
         yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
-        daily = await self._get_daily_tokens()
 
-        log_entry = {}
-        day_total = 0
-        for uid, days in sorted(daily.items()):
-            if yesterday in days:
-                tok = days[yesterday]
-                log_entry[uid] = tok
-                day_total += tok
+        async with self._kv_lock:
+            daily = await self._get_daily_tokens()
 
-        log_entry["_total"] = day_total
-        log_entry["_date"] = yesterday
+            log_entry = {}
+            day_total = 0
+            for uid, days in sorted(daily.items()):
+                if yesterday in days:
+                    tok = days[yesterday]
+                    log_entry[uid] = tok
+                    day_total += tok
 
-        # 保存到日报记录
-        daily_log = await self._get_daily_log()
-        daily_log[yesterday] = log_entry
-        await self._save_daily_log(daily_log)
+            log_entry["_total"] = day_total
+            log_entry["_date"] = yesterday
+
+            # 保存到日报记录
+            daily_log = await self._get_daily_log()
+            daily_log[yesterday] = log_entry
+            await self._save_daily_log(daily_log)
 
         logger.info(f"Token 日报 [{yesterday}] 已归档: {day_total} tokens")
 
     async def terminate(self):
         """插件卸载/停用时调用"""
-        if hasattr(self, '_log_task') and self._log_task:
+        if getattr(self, "_log_task", None):
             self._log_task.cancel()
+            try:
+                await self._log_task
+            except asyncio.CancelledError:
+                pass
+            self._log_task = None
         logger.info("LimitUsePlugin 已卸载")

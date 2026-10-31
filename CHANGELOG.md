@@ -1,5 +1,17 @@
 # 更新日志
 
+## v1.0.17
+
+- 🐛 修复 weighted 签到在默认配置下恒得 0 次：`signin_weights` 默认值此前是字面量 `\n` 而非换行
+- 🐛 weighted 权重配置非法时回落到 range 模式，不再静默返回 0
+- 🐛 `api_update_user` 校验参数，非法值返回 400 而非 500
+- 🔧 KV 读-改-写加 `asyncio.Lock`，避免并发消息丢次数/漏记 Token
+- 🔧 页面目录 `pages/` 迁移到官方推荐的 `views/`，bridge 改用 `AstrBotPluginView`（兼容旧别名）
+- 🔧 `metadata.yaml` 声明 `astrbot_version: ">=4.29.0,<5"`（`views/` 需 AstrBot ≥ 4.29.0），README 标注最低版本
+- 🔧 Web API 改用 `astrbot.api.web` 的 `request` / `json_response` / `error_response`
+- 🔧 移除旧式 `@register`，版本号只由 `metadata.yaml` 提供
+- 📝 修正 README 配置表/目录/License，补充 `/查看全部余额` 说明
+
 ## v1.0.16
 
 - ✨ 新增签到方式二（weighted）：自定义值+权重概率
@@ -8,7 +20,7 @@
 
 ## v1.0.15
 
-- ✨ `/查看全部余额` 改为渲染成图片输出，备注左对齐、余额右对齐
+- ✨ 新增 `/查看全部余额`（纯文本输出，格式：备注：剩余N；/帮助 不显示）
 
 ## v1.0.14
 

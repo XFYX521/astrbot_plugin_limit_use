@@ -25,11 +25,10 @@
     "hint": "range: 方式一（最小-最大范围），weighted: 方式二（自定义值+权重概率）"
   },
   "signin_weights": {
-    "description": "方式二的权重配置 {值: 权重}",
-    "type": "object",
-    "default": {},
-    "hint": "如 {\"3\": 1, \"5\": 2, \"10\": 1} 表示获得3次概率1/4，5次概率2/4，10次概率1/4",
-    "items": {}
+    "description": "方式二的权重配置（每行 值:权重）",
+    "type": "text",
+    "default": "5:1\n3:2\n10:1",
+    "hint": "每行一组 值:权重，如 \"5:1\" 表示获得5次的权重为1"
   },
   "limit_reply": {
     "description": "次数用完后自动回复的内容",
