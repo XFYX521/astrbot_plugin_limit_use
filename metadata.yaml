@@ -1,7 +1,7 @@
 name: astrbot_plugin_limit_use
 display_name: 对话次数限制
 desc: 给 QQ 用户设置对话次数额度，次数用完后需签到补充；支持模拟行情投资。
-version: v1.0.19
+version: v1.0.20
 astrbot_version: ">=4.29.0,<5"
 author: XFYX521
 repo: https://github.com/XFYX521/astrbot_plugin_limit_use
