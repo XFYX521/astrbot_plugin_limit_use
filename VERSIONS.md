@@ -2,12 +2,13 @@
 
 插件：`astrbot_plugin_limit_use` · 作者：XFYX521 · 仓库：https://github.com/XFYX521/astrbot_plugin_limit_use
 
-当前最新版本：**v1.0.20**（2026-10-31），tag `v1.0.20`
+当前最新版本：**v2.0.0**（2026-10-31），tag `v2.0.0`
 
 本文件与 `versions.json` 均由 `python scripts/gen_versions.py` 从 `CHANGELOG.md` 和 git 历史生成，请勿手改。
 
 | 版本 | 日期 | 提交 | 主要变更 |
 |:---|:---|:---|:---|
+| v2.0.0 | 2026-10-31 | [ba0bcaf](https://github.com/XFYX521/astrbot_plugin_limit_use/commit/ba0bcaf9ab6cb9366f2be65d71e762dd9a3067c8) | 💥 投资玩法重做：`/投资 <币种> <百分比>`，投入 = 当前余额的百分比（1–100，向下取整、最少 1 次），不再需要方向与杠杆 |
 | v1.0.20 | 2026-10-31 | [ca3ec7e](https://github.com/XFYX521/astrbot_plugin_limit_use/commit/ca3ec7eec8fd06dd5fda1fe59e7e58ddf565a51b) | 🎨 卡片改为满版绘制（无外边距、100% 宽高），字号再放大一档：标题 32px、正文 21–22px、表头 18px |
 | v1.0.19 | 2026-10-31 | [afb39c6](https://github.com/XFYX521/astrbot_plugin_limit_use/commit/afb39c604a9c50b35fa9a18f37fb507dfda4c4f0) | 🎨 优化 `/帮助`、`/投资` 卡片样式：字号整体放大，卡片填满画布并垂直居中，减少图片上下留白 |
 | v1.0.18 | 2026-10-31 | [c9942fb](https://github.com/XFYX521/astrbot_plugin_limit_use/commit/c9942fbdde1d2c9360740e54035950c22c27c42e) | ✨ 新增 `/投资`（投资模式）：用对话次数做多/做空，保证金交易结算，每日限 1 次 |
@@ -57,9 +58,9 @@ https://raw.githubusercontent.com/XFYX521/astrbot_plugin_limit_use/master/versio
 {
   "author": "XFYX521",
   "name": "astrbot_plugin_limit_use",
-  "version": "v1.0.20",
+  "version": "v2.0.0",
   "repo": "https://github.com/XFYX521/astrbot_plugin_limit_use",
-  "desc": "给 QQ 用户设置对话次数额度，次数用完后需签到补充；支持模拟行情投资。",
+  "desc": "给 QQ 用户设置对话次数额度，次数用完后需签到补充；支持按余额百分比模拟行情投资。",
   "short_desc": "按用户限制对话次数，额度用完后签到补充。",
   "tags": [
     "对话次数",
@@ -72,7 +73,7 @@ https://raw.githubusercontent.com/XFYX521/astrbot_plugin_limit_use/master/versio
     "aiocqhttp"
   ],
   "astrbot_version": ">=4.29.0,<5",
-  "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v1.0.20.zip",
+  "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v2.0.0.zip",
   "updated_at": "2026-10-31T00:00:00Z"
 }
 ```

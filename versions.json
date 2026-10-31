@@ -2,12 +2,30 @@
   "$meta": {
     "schema_version": 1,
     "name": "XFYX521 插件源",
-    "version": "2026-10-31T17:29:34+08:00",
+    "version": "2026-10-31T20:59:08+08:00",
     "homepage": "https://github.com/XFYX521/astrbot_plugin_limit_use",
     "repository": "https://github.com/XFYX521/astrbot_plugin_limit_use",
     "description": "XFYX521 的 AstrBot 插件源，提供对话次数限制插件的更新检测",
     "updated_at": "2026-10-31T00:00:00Z",
     "releases": [
+      {
+        "version": "v2.0.0",
+        "date": "2026-10-31",
+        "commit": "ba0bcaf9ab6cb9366f2be65d71e762dd9a3067c8",
+        "tag": "v2.0.0",
+        "zip_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v2.0.0.zip",
+        "changes": [
+          "💥 投资玩法重做：`/投资 <币种> <百分比>`，投入 = 当前余额的百分比（1–100，向下取整、最少 1 次），不再需要方向与杠杆",
+          "💥 签到与投资共享每日一次：今天已签到不能再投资，今天已投资不能再签到",
+          "✨ 移除杠杆与单次上限配置；手续费改为可配置项，默认 `0`（免手续费）",
+          "✨ 新增 `GET /astrbot_plugin_limit_use/market`，返回今日行情（币种、基准价、涨跌、现价、波动与手续费）",
+          "🎨 WebUI 拆分为两个视图并重做界面：「用户管理」（`views/users/`）与「行情与投资」（`views/invest/`）",
+          "🎨 旧 `pages/`、`views/info/` 已移除，统一到 `views/` 下的独立页面，支持明暗主题",
+          "📝 版本号改回 `x.x.x` 语义：大版本（破坏性变更）/ 小版本（新功能）/ 补丁号（修复）",
+          "🐛 兼容旧指令格式（如 `/投资 原石 做多 10 5x`），自动忽略方向与杠杆并取第一个有效百分比"
+        ],
+        "note": null
+      },
       {
         "version": "v1.0.20",
         "date": "2026-10-31",
@@ -284,9 +302,9 @@
   "XFYX521/astrbot_plugin_limit_use": {
     "author": "XFYX521",
     "name": "astrbot_plugin_limit_use",
-    "version": "v1.0.20",
+    "version": "v2.0.0",
     "repo": "https://github.com/XFYX521/astrbot_plugin_limit_use",
-    "desc": "给 QQ 用户设置对话次数额度，次数用完后需签到补充；支持模拟行情投资。",
+    "desc": "给 QQ 用户设置对话次数额度，次数用完后需签到补充；支持按余额百分比模拟行情投资。",
     "short_desc": "按用户限制对话次数，额度用完后签到补充。",
     "tags": [
       "对话次数",
@@ -299,7 +317,7 @@
       "aiocqhttp"
     ],
     "astrbot_version": ">=4.29.0,<5",
-    "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v1.0.20.zip",
+    "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v2.0.0.zip",
     "updated_at": "2026-10-31T00:00:00Z"
   }
 }
