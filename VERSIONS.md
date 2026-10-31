@@ -2,12 +2,13 @@
 
 插件：`astrbot_plugin_limit_use` · 作者：XFYX521 · 仓库：https://github.com/XFYX521/astrbot_plugin_limit_use
 
-当前最新版本：**v2.1.0**（2026-10-31），tag `v2.1.0`
+当前最新版本：**v2.1.1**（2026-10-31），tag `v2.1.1`
 
 本文件与 `versions.json` 均由 `python scripts/gen_versions.py` 从 `CHANGELOG.md` 和 git 历史生成，请勿手改。
 
 | 版本 | 日期 | 提交 | 主要变更 |
 |:---|:---|:---|:---|
+| v2.1.1 | 2026-10-31 | [ad199c1](https://github.com/XFYX521/astrbot_plugin_limit_use/commit/ad199c1bed7df7e9093f54292663ee3600a4a5f4) | 🗑️ WebUI 用户管理页新增「清空全部数据」：需在弹窗输入「清空」确认，一次删除额度、签到、调用统计、Token、投资记录与昵称档案 |
 | v2.1.0 | 2026-10-31 | [69ede83](https://github.com/XFYX521/astrbot_plugin_limit_use/commit/69ede83fef59d7bbc3ead37fc378c19e93892eca) | 🎨 WebUI 用户列表改为按聊天窗口分组：私聊与群聊各一张表，群聊行显示群号与群名片 |
 | v2.0.1 | 2026-10-31 | [c193226](https://github.com/XFYX521/astrbot_plugin_limit_use/commit/c1932265a185af214232074d9d6b5025882ac089) | 🐛 修复 WebUI 只能看到「行情与投资」、无法切到「用户管理」：AstrBot 侧边栏默认扁平模式下每个插件只显示第一个视图 |
 | v2.0.0 | 2026-10-31 | [ba0bcaf](https://github.com/XFYX521/astrbot_plugin_limit_use/commit/ba0bcaf9ab6cb9366f2be65d71e762dd9a3067c8) | 💥 投资玩法重做：`/投资 <币种> <百分比>`，投入 = 当前余额的百分比（1–100，向下取整、最少 1 次），不再需要方向与杠杆 |
@@ -60,7 +61,7 @@ https://raw.githubusercontent.com/XFYX521/astrbot_plugin_limit_use/master/versio
 {
   "author": "XFYX521",
   "name": "astrbot_plugin_limit_use",
-  "version": "v2.1.0",
+  "version": "v2.1.1",
   "repo": "https://github.com/XFYX521/astrbot_plugin_limit_use",
   "desc": "给 QQ 用户设置对话次数额度，次数用完后需签到补充；支持按余额百分比模拟行情投资。",
   "short_desc": "按用户限制对话次数，额度用完后签到补充。",
@@ -75,7 +76,7 @@ https://raw.githubusercontent.com/XFYX521/astrbot_plugin_limit_use/master/versio
     "aiocqhttp"
   ],
   "astrbot_version": ">=4.29.0,<5",
-  "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v2.1.0.zip",
+  "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v2.1.1.zip",
   "updated_at": "2026-10-31T00:00:00Z"
 }
 ```

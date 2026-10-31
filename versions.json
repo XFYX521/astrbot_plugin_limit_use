@@ -2,12 +2,26 @@
   "$meta": {
     "schema_version": 1,
     "name": "XFYX521 插件源",
-    "version": "2026-10-31T21:41:02+08:00",
+    "version": "2026-10-31T21:49:57+08:00",
     "homepage": "https://github.com/XFYX521/astrbot_plugin_limit_use",
     "repository": "https://github.com/XFYX521/astrbot_plugin_limit_use",
     "description": "XFYX521 的 AstrBot 插件源，提供对话次数限制插件的更新检测",
     "updated_at": "2026-10-31T00:00:00Z",
     "releases": [
+      {
+        "version": "v2.1.1",
+        "date": "2026-10-31",
+        "commit": "ad199c1bed7df7e9093f54292663ee3600a4a5f4",
+        "tag": "v2.1.1",
+        "zip_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v2.1.1.zip",
+        "changes": [
+          "🗑️ WebUI 用户管理页新增「清空全部数据」：需在弹窗输入「清空」确认，一次删除额度、签到、调用统计、Token、投资记录与昵称档案",
+          "✏️ 剩余次数改为直接输入数字（回车 / 失焦保存，非法输入自动还原），去掉 `−`/`＋` 与 `−1`/`+1` 步进按钮",
+          "🔌 新增 `POST /astrbot_plugin_limit_use/clear_all` 接口（兼容 GET），返回清空的数据类别",
+          "🧪 离线测试新增 ClearAllTest 2 项（55 → 57 项）"
+        ],
+        "note": null
+      },
       {
         "version": "v2.1.0",
         "date": "2026-10-31",
@@ -330,7 +344,7 @@
   "XFYX521/astrbot_plugin_limit_use": {
     "author": "XFYX521",
     "name": "astrbot_plugin_limit_use",
-    "version": "v2.1.0",
+    "version": "v2.1.1",
     "repo": "https://github.com/XFYX521/astrbot_plugin_limit_use",
     "desc": "给 QQ 用户设置对话次数额度，次数用完后需签到补充；支持按余额百分比模拟行情投资。",
     "short_desc": "按用户限制对话次数，额度用完后签到补充。",
@@ -345,7 +359,7 @@
       "aiocqhttp"
     ],
     "astrbot_version": ">=4.29.0,<5",
-    "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v2.1.0.zip",
+    "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v2.1.1.zip",
     "updated_at": "2026-10-31T00:00:00Z"
   }
 }
