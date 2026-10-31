@@ -2,12 +2,23 @@
   "$meta": {
     "schema_version": 1,
     "name": "XFYX521 插件源",
-    "version": "2026-10-31T17:22:22+08:00",
+    "version": "2026-10-31T17:29:34+08:00",
     "homepage": "https://github.com/XFYX521/astrbot_plugin_limit_use",
     "repository": "https://github.com/XFYX521/astrbot_plugin_limit_use",
     "description": "XFYX521 的 AstrBot 插件源，提供对话次数限制插件的更新检测",
     "updated_at": "2026-10-31T00:00:00Z",
     "releases": [
+      {
+        "version": "v1.0.20",
+        "date": "2026-10-31",
+        "commit": "ca3ec7eec8fd06dd5fda1fe59e7e58ddf565a51b",
+        "tag": "v1.0.20",
+        "zip_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v1.0.20.zip",
+        "changes": [
+          "🎨 卡片改为满版绘制（无外边距、100% 宽高），字号再放大一档：标题 32px、正文 21–22px、表头 18px"
+        ],
+        "note": null
+      },
       {
         "version": "v1.0.19",
         "date": "2026-10-31",
@@ -273,7 +284,7 @@
   "XFYX521/astrbot_plugin_limit_use": {
     "author": "XFYX521",
     "name": "astrbot_plugin_limit_use",
-    "version": "v1.0.19",
+    "version": "v1.0.20",
     "repo": "https://github.com/XFYX521/astrbot_plugin_limit_use",
     "desc": "给 QQ 用户设置对话次数额度，次数用完后需签到补充；支持模拟行情投资。",
     "short_desc": "按用户限制对话次数，额度用完后签到补充。",
@@ -288,7 +299,7 @@
       "aiocqhttp"
     ],
     "astrbot_version": ">=4.29.0,<5",
-    "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v1.0.19.zip",
+    "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v1.0.20.zip",
     "updated_at": "2026-10-31T00:00:00Z"
   }
 }
