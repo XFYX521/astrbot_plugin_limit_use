@@ -2,12 +2,13 @@
 
 插件：`astrbot_plugin_limit_use` · 作者：XFYX521 · 仓库：https://github.com/XFYX521/astrbot_plugin_limit_use
 
-当前最新版本：**v1.0.17**（2026-10-31），tag `v1.0.17`
+当前最新版本：**v1.0.18**（2026-10-31），tag `v1.0.18`
 
 本文件与 `versions.json` 均由 `python scripts/gen_versions.py` 从 `CHANGELOG.md` 和 git 历史生成，请勿手改。
 
 | 版本 | 日期 | 提交 | 主要变更 |
 |:---|:---|:---|:---|
+| v1.0.18 | 2026-10-31 | [c9942fb](https://github.com/XFYX521/astrbot_plugin_limit_use/commit/c9942fbdde1d2c9360740e54035950c22c27c42e) | ✨ 新增 `/投资`（投资模式）：用对话次数做多/做空，保证金交易结算，每日限 1 次 |
 | v1.0.17 | 2026-10-31 | [709d83c](https://github.com/XFYX521/astrbot_plugin_limit_use/commit/709d83c617c4ed81360edb0574449f4e8e4ddb6a) | 🐛 修复 weighted 签到在默认配置下恒得 0 次：`signin_weights` 默认值此前是字面量 `\n` 而非换行 |
 | v1.0.16 | 2026-06-30 | [2d6cdf5](https://github.com/XFYX521/astrbot_plugin_limit_use/commit/2d6cdf561a6dd34f45b0b47689133c3875112368) | ✨ 新增签到方式二（weighted）：自定义值+权重概率 |
 | v1.0.15 | 2026-06-24 | [b01e843](https://github.com/XFYX521/astrbot_plugin_limit_use/commit/b01e843c1e774edf6200515969b01f634b4d0299) | ✨ 新增 `/查看全部余额`（纯文本输出，格式：备注：剩余N；/帮助 不显示） |
@@ -54,9 +55,9 @@ https://raw.githubusercontent.com/XFYX521/astrbot_plugin_limit_use/master/versio
 {
   "author": "XFYX521",
   "name": "astrbot_plugin_limit_use",
-  "version": "v1.0.17",
+  "version": "v1.0.18",
   "repo": "https://github.com/XFYX521/astrbot_plugin_limit_use",
-  "desc": "给 QQ 用户设置对话次数额度，次数用完后需签到补充。",
+  "desc": "给 QQ 用户设置对话次数额度，次数用完后需签到补充；支持模拟行情投资。",
   "short_desc": "按用户限制对话次数，额度用完后签到补充。",
   "tags": [
     "对话次数",
@@ -69,7 +70,7 @@ https://raw.githubusercontent.com/XFYX521/astrbot_plugin_limit_use/master/versio
     "aiocqhttp"
   ],
   "astrbot_version": ">=4.29.0,<5",
-  "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v1.0.17.zip",
+  "download_url": "https://github.com/XFYX521/astrbot_plugin_limit_use/archive/refs/tags/v1.0.18.zip",
   "updated_at": "2026-10-31T00:00:00Z"
 }
 ```
