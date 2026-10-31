@@ -21,7 +21,7 @@ except ImportError:  # 旧版没有该模块时退回 quart（保持插件可加
 
 PLUGIN_NAME = "astrbot_plugin_limit_use"
 PLUGIN_DISPLAY_NAME = "对话次数限制"
-PLUGIN_VERSION = "v2.1.1"
+PLUGIN_VERSION = "v2.2.0"
 
 # 投资币种默认值（配置解析失败时兜底），基准价只用于展示现价
 DEFAULT_ASSETS: list[tuple[str, float]] = [
@@ -292,6 +292,12 @@ class LimitUsePlugin(Star):
                 self.api_clear_all,
                 ["POST", "GET"],
                 "清空全部运行数据",
+            )
+            context.register_web_api(
+                f"/{PLUGIN_NAME}/users/<user_id>/delete",
+                self.api_delete_user,
+                ["POST", "GET"],
+                "删除指定用户的全部数据",
             )
             logger.info("LimitUsePlugin: Web API 已注册")
         except Exception as e:
@@ -801,22 +807,59 @@ class LimitUsePlugin(Star):
 
     @filter.command("查看全部余额")
     async def view_all_quota(self, event: AstrMessageEvent):
-        user_id = event.get_sender_id()
+        """管理员查看余额：群聊只统计本群用户，私聊统计全部用户（文生图，失败回落文本）"""
+        user_id, _, group_id = self._chat_identity(event)
         if not self._is_admin(user_id):
             yield event.plain_result("你没有权限使用此指令哦(｡•ᴗ•｡)")
             return
+
         async with self._kv_lock:
             quota = await self._get_quota()
             profiles = await self._get_profiles()
         default_quota = self.config["default_quota"]
-        if not quota:
-            yield event.plain_result("还没有用户数据呢～")
+
+        if group_id:
+            entries = []
+            for uid, profile in profiles.items():
+                group = (profile.get("groups") or {}).get(group_id) or {}
+                if not group:
+                    continue
+                name = group.get("name") or profile.get("name") or uid
+                entries.append((uid, name, quota.get(uid, default_quota)))
+            entries.sort(key=lambda item: (-item[2], item[0]))
+            title = "🏦 本群余额"
+            subtitle = f"群 {group_id} · 共 {len(entries)} 人"
+            footer = "只统计在当前群聊出现过的用户"
+            empty_text = "本群还没有用户记录呢～"
+        else:
+            entries = [
+                (uid, (profiles.get(uid) or {}).get("name") or uid, quota.get(uid, default_quota))
+                for uid in sorted(quota)
+            ]
+            title = "🏦 全部余额"
+            subtitle = f"共 {len(entries)} 人"
+            footer = "按最近昵称显示"
+            empty_text = "还没有用户数据呢～"
+
+        if not entries:
+            yield event.plain_result(empty_text)
             return
-        lines = []
-        for uid in sorted(quota.keys()):
-            name = (profiles.get(uid) or {}).get("name") or uid
-            lines.append(f"{name}（{uid}）：剩余{quota.get(uid, default_quota)}")
-        yield event.plain_result("\n".join(lines))
+
+        sections = [{
+            "type": "table",
+            "headers": ["用户", "剩余次数"],
+            "rows": [[f"{name}（{uid}）", str(remain)] for uid, name, remain in entries],
+        }]
+        total_remain = sum(remain for _, _, remain in entries)
+        sections.append({
+            "type": "kv",
+            "items": [
+                ("用户数", f"{len(entries)} 人"),
+                ("剩余合计", f"{total_remain} 次"),
+            ],
+        })
+        fallback = "\n".join(f"{name}（{uid}）：剩余{remain}" for uid, name, remain in entries)
+        yield await self._card_result(event, title, subtitle, sections, footer, fallback)
 
     @filter.command("帮助")
     async def help_cmd(self, event: AstrMessageEvent):
@@ -957,6 +1000,53 @@ class LimitUsePlugin(Star):
             await self.put_kv_data("user_remarks", {})
         logger.info("LimitUsePlugin: 全部用户数据已清空")
         return json_response({"ok": True, "cleared": list(empty.keys())})
+
+    async def api_delete_user(self, user_id: str):
+        """删除单个用户的全部运行数据（额度、签到、统计、Token、投资记录与昵称档案）"""
+        uid = str(user_id or "").strip()
+        if not uid:
+            return error_response("user_id 不能为空", status_code=400)
+
+        async with self._kv_lock:
+            for getter, saver in (
+                (self._get_quota, self._save_quota),
+                (self._get_signin, self._save_signin),
+                (self._get_total_usage, self._save_total_usage),
+                (self._get_total_tokens, self._save_total_tokens),
+                (self._get_profiles, self._save_profiles),
+                (self._get_invest_daily, self._save_invest_daily),
+                (self._get_daily_usage, self._save_daily_usage),
+                (self._get_daily_tokens, self._save_daily_tokens),
+            ):
+                data = await getter()
+                if uid in data:
+                    data.pop(uid)
+                    await saver(data)
+
+            # token_daily_log 是 {日期: {uid: 次数}}，需要逐日清理
+            daily_log = await self._get_daily_log()
+            changed = False
+            for day_log in daily_log.values():
+                if isinstance(day_log, dict) and uid in day_log:
+                    day_log.pop(uid)
+                    changed = True
+            if changed:
+                await self._save_daily_log(daily_log)
+
+            history = await self._get_invest_history()
+            kept = [item for item in history if str(item.get("user_id", "")) != uid]
+            history_removed = len(history) - len(kept)
+            if history_removed:
+                await self._save_invest_history(kept)
+
+            # 兼容旧版本遗留的备注数据
+            remarks = await self.get_kv_data("user_remarks", {})
+            if isinstance(remarks, dict) and uid in remarks:
+                remarks.pop(uid)
+                await self.put_kv_data("user_remarks", remarks)
+
+        logger.info(f"LimitUsePlugin: 已删除用户 {uid} 的全部数据")
+        return json_response({"ok": True, "user_id": uid, "investments_removed": history_removed})
 
     async def api_get_market(self):
         """返回今日行情与投资参数（供 WebUI 行情页使用）"""

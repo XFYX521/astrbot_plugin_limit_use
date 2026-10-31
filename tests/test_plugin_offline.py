@@ -378,6 +378,40 @@ class ProfileTest(unittest.IsolatedAsyncioTestCase):
         items = await collect(plugin.view_all_quota(FakeEvent(user_id="99999")))
         self.assertIn("小明（10001）：剩余5", items[0][1])
 
+    async def test_view_all_quota_group_only_lists_group_members(self):
+        plugin = make_plugin(admin_users="99999")
+        async with plugin._kv_lock:
+            await plugin.put_kv_data("user_quota", {"10001": 5, "10002": 8})
+            await plugin._touch_profile(FakeEvent(user_id="10001", nickname="群名片小明", group_id="555"))
+            await plugin._touch_profile(FakeEvent(user_id="10002", nickname="别群的人", group_id="666"))
+        items = await collect(plugin.view_all_quota(FakeEvent(user_id="99999", group_id="555")))
+        text = items[0][1]
+        self.assertIn("群名片小明（10001）：剩余5", text)
+        self.assertNotIn("10002", text)
+
+    async def test_view_all_quota_group_without_records(self):
+        plugin = make_plugin(admin_users="99999")
+        async with plugin._kv_lock:
+            await plugin.put_kv_data("user_quota", {"10001": 5})
+            await plugin._touch_profile(FakeEvent(user_id="10001", nickname="小明"))
+        items = await collect(plugin.view_all_quota(FakeEvent(user_id="99999", group_id="777")))
+        self.assertIn("本群还没有用户记录", items[0][1])
+
+    async def test_view_all_quota_renders_image_when_available(self):
+        plugin = make_plugin(admin_users="99999")
+        async with plugin._kv_lock:
+            await plugin.put_kv_data("user_quota", {"10001": 5})
+            await plugin._touch_profile(FakeEvent(user_id="10001", nickname="小明", group_id="555"))
+
+        async def fake_render(tmpl, data, options=None):
+            self.assertIn("小明", tmpl)
+            self.assertEqual(options, {"full_page": True, "type": "png"})
+            return "http://img/card.png"
+
+        plugin.html_render = fake_render
+        items = await collect(plugin.view_all_quota(FakeEvent(user_id="99999", group_id="555")))
+        self.assertEqual(items[0], ("image", "http://img/card.png"))
+
 
 class MarketApiTest(unittest.IsolatedAsyncioTestCase):
     async def test_market_payload_is_deterministic(self):
@@ -725,6 +759,58 @@ class ClearAllTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(users["users"], [])
         investments = await plugin.api_get_investments()
         self.assertEqual(investments["investments"], [])
+
+
+class DeleteUserTest(unittest.IsolatedAsyncioTestCase):
+    async def test_delete_user_removes_all_related_data(self):
+        plugin = make_plugin()
+        await plugin.put_kv_data("user_quota", {"10001": 9, "10002": 5})
+        await plugin.put_kv_data("user_signin", {"10001": "2026-10-31", "10002": "2026-10-30"})
+        await plugin.put_kv_data("user_total_usage", {"10001": 3, "10002": 7})
+        await plugin.put_kv_data("user_profiles", {"10001": {"name": "小明"}, "10002": {"name": "阿伟"}})
+        await plugin.put_kv_data("user_total_tokens", {"10001": 100, "10002": 200})
+        await plugin.put_kv_data("user_daily_tokens", {"10001": {"2026-10-31": 10}, "10002": {"2026-10-31": 20}})
+        await plugin.put_kv_data("token_daily_log", {"2026-10-30": {"10001": 5, "10002": 6}})
+        await plugin.put_kv_data("user_daily_usage", {"10001": {"2026-10-31": 1}, "10002": {"2026-10-31": 2}})
+        await plugin.put_kv_data("invest_daily", {"10001": "2026-10-31", "10002": "2026-10-31"})
+        await plugin.put_kv_data("invest_history", [
+            {"user_id": "10001", "pnl": 2},
+            {"user_id": "10002", "pnl": 1},
+            {"user_id": "10001", "pnl": -1},
+        ])
+        await plugin.put_kv_data("user_remarks", {"10001": "旧备注", "10002": "保留"})
+
+        result = await plugin.api_delete_user("10001")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["investments_removed"], 2)
+
+        for key in (
+            "user_quota", "user_signin", "user_total_usage", "user_profiles",
+            "user_total_tokens", "user_daily_tokens", "user_daily_usage", "invest_daily",
+        ):
+            data = await plugin.get_kv_data(key, {})
+            self.assertNotIn("10001", data, key)
+            self.assertIn("10002", data, key)
+
+        log = await plugin.get_kv_data("token_daily_log", {})
+        self.assertNotIn("10001", log["2026-10-30"])
+        self.assertIn("10002", log["2026-10-30"])
+
+        history = await plugin.get_kv_data("invest_history", [])
+        self.assertEqual([item["user_id"] for item in history], ["10002"])
+        remarks = await plugin.get_kv_data("user_remarks", {})
+        self.assertNotIn("10001", remarks)
+
+    async def test_delete_user_ignores_unknown_user(self):
+        plugin = make_plugin()
+        result = await plugin.api_delete_user("99999")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["investments_removed"], 0)
+
+    async def test_delete_user_rejects_empty_id(self):
+        plugin = make_plugin()
+        result = await plugin.api_delete_user("  ")
+        self.assertEqual(result["status"], "error")
 
 
 if __name__ == "__main__":

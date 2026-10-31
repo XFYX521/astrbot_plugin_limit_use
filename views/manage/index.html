@@ -70,10 +70,23 @@
     .stat .value.neg { color: var(--neg); }
 
     .panel { background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+    .panel + .panel { margin-top: 16px; }
     .panel-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 16px; border-bottom: 1px solid var(--border); }
     .panel-head .title { font-size: 15px; font-weight: 700; }
     .panel-head .actions { margin-left: auto; display: flex; gap: 8px; }
     .panel-head .hint { margin-left: auto; color: var(--muted); font-size: 12px; }
+    .panel-head .toggle {
+      display: flex; align-items: center; gap: 8px; padding: 0; border: none;
+      background: none; color: inherit; font: inherit; cursor: pointer; user-select: none;
+    }
+    .panel-head .toggle:hover .title { color: var(--primary); }
+    .panel-head .toggle .caret { color: var(--muted); font-size: 11px; transition: transform 0.15s; }
+    .panel-head .count { color: var(--muted); font-size: 12px; font-weight: 600; }
+    .panel.collapsed .panel-head { border-bottom-color: transparent; }
+    .panel.collapsed .toggle .caret { transform: rotate(-90deg); }
+    .panel.collapsed .panel-body { display: none; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn-del:hover { border-color: var(--neg); color: var(--neg); }
     .search { border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 8px; padding: 7px 12px; font-size: 13px; outline: none; min-width: 180px; }
     .search:focus { border-color: var(--primary); }
 
@@ -164,25 +177,37 @@
     <section class="view" id="view-users">
       <section class="stats" id="stats"></section>
 
-      <section class="panel">
+      <section class="panel" id="panel-groups">
         <div class="panel-head">
-          <span class="title">私聊</span>
+          <button class="toggle" type="button" data-panel="groups" aria-expanded="true">
+            <span class="caret">▼</span>
+            <span class="title">群聊</span>
+            <span class="count" id="groupCount"></span>
+          </button>
+          <span class="hint">同一用户在私聊与各群共用一份额度</span>
+        </div>
+        <div class="panel-body">
+          <div class="table-scroll">
+            <div id="groupWrap"><div class="empty">加载中…</div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="panel-private">
+        <div class="panel-head">
+          <button class="toggle" type="button" data-panel="private" aria-expanded="true">
+            <span class="caret">▼</span>
+            <span class="title">私聊</span>
+            <span class="count" id="privateCount"></span>
+          </button>
           <div class="actions">
             <input class="search" id="search" placeholder="搜索昵称 / QQ 号 / 群号" />
           </div>
         </div>
-        <div class="table-scroll">
-          <div id="privateWrap"><div class="empty">加载中…</div></div>
-        </div>
-      </section>
-
-      <section class="panel" style="margin-top: 16px;">
-        <div class="panel-head">
-          <span class="title">群聊</span>
-          <span class="hint">同一用户在私聊与各群共用一份额度</span>
-        </div>
-        <div class="table-scroll">
-          <div id="groupWrap"><div class="empty">加载中…</div></div>
+        <div class="panel-body">
+          <div class="table-scroll">
+            <div id="privateWrap"><div class="empty">加载中…</div></div>
+          </div>
         </div>
       </section>
 
@@ -229,6 +254,17 @@
     </div>
   </div>
 
+  <div class="modal-mask" id="delUserModal" hidden>
+    <div class="modal">
+      <h3>删除用户数据</h3>
+      <p id="delUserText">将删除该用户的全部数据，且无法恢复。</p>
+      <div class="modal-actions">
+        <button class="btn" id="delCancel">取消</button>
+        <button class="btn btn-danger" id="delConfirm">确认删除</button>
+      </div>
+    </div>
+  </div>
+
   <script type="module">
     const bridge = window.AstrBotPluginView || window.AstrBotPluginPage;
     if (!bridge) {
@@ -256,6 +292,7 @@
       history: [],
       usersLoaded: false,
       investLoaded: false,
+      pendingDelete: null,
     };
 
     function toast(msg, isError = false) {
@@ -339,6 +376,7 @@
     }
 
     function userCells(u, displayName, extra) {
+      const label = displayName || u.name || u.user_id;
       return `
         <td class="uid">${escapeHtml(u.user_id)}</td>
         <td>${escapeHtml(displayName || '—')}${u.is_admin ? ' <span class="muted">管理员</span>' : ''}</td>
@@ -346,7 +384,10 @@
         <td><input class="qty td-remain" data-uid="${escapeAttr(u.user_id)}" value="${Number(u.remaining) || 0}" inputmode="numeric" autocomplete="off" /></td>
         <td class="num">${Number(u.today_used) || 0}</td>
         <td class="num">${Number(u.total_used) || 0}</td>
-        <td class="num">${fmtTokens(u.total_tokens)}</td>`;
+        <td class="num">${fmtTokens(u.total_tokens)}</td>
+        <td><button class="btn btn-sm btn-del" type="button"
+              data-uid="${escapeAttr(u.user_id)}"
+              data-label="${escapeAttr(label)}">删除</button></td>`;
     }
 
     function renderUserTables() {
@@ -374,7 +415,7 @@
         ? `<table>
             <thead><tr>
               <th>QQ 号</th><th>昵称</th><th>最近私聊</th><th>剩余次数</th>
-              <th>今日调用</th><th>累积调用</th><th>累积 Token</th>
+              <th>今日调用</th><th>累积调用</th><th>累积 Token</th><th>操作</th>
             </tr></thead>
             <tbody>${privateRows}</tbody>
           </table>`
@@ -384,11 +425,14 @@
         ? `<table>
             <thead><tr>
               <th>QQ 号</th><th>昵称</th><th>群号</th><th>剩余次数</th>
-              <th>今日调用</th><th>累积调用</th><th>累积 Token</th>
+              <th>今日调用</th><th>累积调用</th><th>累积 Token</th><th>操作</th>
             </tr></thead>
             <tbody>${groupRows.join('')}</tbody>
           </table>`
         : `<div class="empty">${state.users.length ? '没有匹配的群聊记录' : '暂无群聊记录'}</div>`;
+
+      $('privateCount').textContent = privateRows ? `（${privateRows.split('<tr').length - 1}）` : '';
+      $('groupCount').textContent = groupRows.length ? `（${groupRows.length}）` : '';
 
       [privateWrap, groupWrap].forEach((wrap) => {
         wrap.querySelectorAll('.qty').forEach((input) => {
@@ -397,6 +441,9 @@
             if (e.key === 'Escape') { e.preventDefault(); restoreQuotaInput(input); }
           });
           input.addEventListener('blur', () => saveQuota(input));
+        });
+        wrap.querySelectorAll('.btn-del').forEach((btn) => {
+          btn.addEventListener('click', () => openDeleteModal(btn.dataset.uid, btn.dataset.label));
         });
       });
     }
@@ -608,6 +655,71 @@
     });
     clearConfirm.addEventListener('click', clearAllData);
 
+    // ── 删除单个用户 ──
+    const delUserModal = $('delUserModal');
+    const delUserText = $('delUserText');
+
+    function openDeleteModal(uid, label) {
+      state.pendingDelete = String(uid);
+      delUserText.innerHTML = `将删除「${escapeHtml(label || uid)}」（${escapeHtml(uid)}）的额度、签到、调用统计、Token、投资记录与昵称档案，且无法恢复。`;
+      delUserModal.hidden = false;
+    }
+    function closeDeleteModal() {
+      delUserModal.hidden = true;
+      state.pendingDelete = null;
+    }
+    async function confirmDeleteUser() {
+      const uid = state.pendingDelete;
+      if (!uid) return;
+      $('delConfirm').disabled = true;
+      try {
+        await bridge.apiGet(`users/${encodeURIComponent(uid)}/delete`);
+        closeDeleteModal();
+        state.users = state.users.filter((u) => String(u.user_id) !== uid);
+        renderUserStats();
+        renderUserTables();
+        toast('用户数据已删除');
+      } catch (e) {
+        toast(`删除失败：${e.message || e}`, true);
+      } finally {
+        $('delConfirm').disabled = false;
+      }
+    }
+    $('delCancel').addEventListener('click', closeDeleteModal);
+    delUserModal.addEventListener('click', (e) => { if (e.target === delUserModal) closeDeleteModal(); });
+    $('delConfirm').addEventListener('click', confirmDeleteUser);
+
+    // ── 分区折叠（状态记在 localStorage） ──
+    const COLLAPSE_KEY = 'limit_use_sections_collapsed';
+
+    function readCollapsed() {
+      try {
+        return JSON.parse(localStorage.getItem(COLLAPSE_KEY) || '{}') || {};
+      } catch (e) {
+        return {};
+      }
+    }
+    function applyCollapsed() {
+      const collapsed = readCollapsed();
+      document.querySelectorAll('.panel-head .toggle').forEach((btn) => {
+        const panel = btn.closest('.panel');
+        const isCollapsed = !!collapsed[btn.dataset.panel];
+        panel.classList.toggle('collapsed', isCollapsed);
+        btn.setAttribute('aria-expanded', isCollapsed ? 'false' : 'true');
+      });
+    }
+    document.querySelectorAll('.panel-head .toggle').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const panel = btn.closest('.panel');
+        const collapsed = readCollapsed();
+        const next = !panel.classList.contains('collapsed');
+        panel.classList.toggle('collapsed', next);
+        btn.setAttribute('aria-expanded', next ? 'false' : 'true');
+        collapsed[btn.dataset.panel] = next;
+        try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify(collapsed)); } catch (e) { /* 忽略 */ }
+      });
+    });
+
     document.querySelectorAll('.tab').forEach((tab) => {
       tab.addEventListener('click', () => setView(tab.dataset.view));
     });
@@ -617,6 +729,7 @@
     });
     $('btnRefresh').addEventListener('click', refresh);
 
+    applyCollapsed();
     setView(location.hash === '#invest' ? 'invest' : 'users');
   </script>
 </body>
